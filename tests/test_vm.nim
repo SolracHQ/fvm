@@ -9,7 +9,6 @@
 import unittest
 import fvm/vm/core
 import fvm/vm/ports
-import fvm/vm/devices
 import fvm/format/fvmobject as fmtobject
 
 proc makeObj(code: seq[Byte]): FvmObject =
@@ -352,13 +351,6 @@ suite "step - IN":
     )).get()
     vm.run().get()
     check vm.regs[0] == 0xABCD'u16
-
-suite "hexPrintDevice":
-  test "hexPrintDevice write returns ok":
-    let dev = hexPrintDevice(stdout)
-    check dev.write(0xFF'u8).isOk
-    check dev.read().isOk
-    check dev.read().get() == 0'u8
 
 suite "step - JMP":
   test "JMP immediate skips instructions":

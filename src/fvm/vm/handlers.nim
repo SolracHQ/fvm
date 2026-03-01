@@ -75,6 +75,47 @@ proc setArithFlags(vm: var Vm, value: Word, carry: bool, isLane: bool) =
   vm.flags.negative = (value shr highBit) != 0
   vm.flags.carry = carry
 
+# Arithmetic cores
+#
+# Pure arithmetic used by both the reg-reg and reg-imm handler variants.
+# Keeping the operation in one place ensures flag behavior stays consistent
+# regardless of where the second operand comes from.
+
+type ArithResult = tuple[value: Word, carry: bool]
+
+proc addCore(a, b: Word, isLane: bool): ArithResult {.inline.} =
+  let mask =
+    if isLane:
+      uint32(ByteMask)
+    else:
+      0xFFFF'u32
+  let raw = uint32(a) + uint32(b)
+  (Word(raw and mask), raw > mask)
+
+proc subCore(a, b: Word, isLane: bool): ArithResult {.inline.} =
+  let mask =
+    if isLane:
+      uint32(ByteMask)
+    else:
+      0xFFFF'u32
+  let carry = uint32(b) > uint32(a)
+  (Word((uint32(a) - uint32(b)) and mask), carry)
+
+# readImmOperand reads the second operand for an imm-variant instruction.
+# isLane drives whether it reads one or two bytes and advances ip accordingly.
+proc readImmOperand(
+    vm: var Vm, dstEnc: RegEncoding
+): FvmResult[tuple[value: Word, advance: Address]] =
+  let isLane = dstEnc.isLane
+  if isLane:
+    ?checkBounds(vm, 3)
+    let v = ?vm.bus.read8(Address(int(vm.ip) + 2))
+    return (Word(v), 3).ok
+  else:
+    ?checkBounds(vm, 4)
+    let v = ?vm.bus.read16(Address(int(vm.ip) + 2))
+    return (v, 4).ok
+
 # Control
 
 proc handleNop(vm: var Vm): FvmResult[void] {.defaultOk.} =
@@ -176,38 +217,45 @@ proc handleAdd(vm: var Vm): FvmResult[void] {.defaultOk.} =
   let (dstEnc, srcEnc) = ?readBinaryRegs(vm)
   if dstEnc.laneTag != srcEnc.laneTag:
     return "ADD operand width mismatch".err
-  let isLane = dstEnc.isLane
-  let mask =
-    if isLane:
-      uint32(ByteMask)
-    else:
-      0xFFFF'u32
-  let raw = uint32(decodeReg(vm, dstEnc)) + uint32(decodeReg(vm, srcEnc))
-  let carry = raw > mask
-  let value = Word(raw and mask)
-  setArithFlags(vm, value, carry, isLane)
+  let (value, carry) =
+    addCore(decodeReg(vm, dstEnc), decodeReg(vm, srcEnc), dstEnc.isLane)
+  setArithFlags(vm, value, carry, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"ADD r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
   vm.ip += 3
+
+proc handleAddImm(vm: var Vm): FvmResult[void] {.defaultOk.} =
+  ?checkBounds(vm, 2)
+  let dstEnc = RegEncoding(?vm.bus.read8(Address(int(vm.ip) + 1)))
+  ?checkReg(dstEnc)
+  let (imm, advance) = ?readImmOperand(vm, dstEnc)
+  let (value, carry) = addCore(decodeReg(vm, dstEnc), imm, dstEnc.isLane)
+  setArithFlags(vm, value, carry, dstEnc.isLane)
+  writeReg(vm, dstEnc, value)
+  debug fmt"ADDI r{dstEnc.index}, 0x{imm:X} = 0x{value:04X}"
+  vm.ip += advance
 
 proc handleSub(vm: var Vm): FvmResult[void] {.defaultOk.} =
   let (dstEnc, srcEnc) = ?readBinaryRegs(vm)
   if dstEnc.laneTag != srcEnc.laneTag:
     return "SUB operand width mismatch".err
-  let isLane = dstEnc.isLane
-  let mask =
-    if isLane:
-      uint32(ByteMask)
-    else:
-      0xFFFF'u32
-  let dstVal = uint32(decodeReg(vm, dstEnc))
-  let srcVal = uint32(decodeReg(vm, srcEnc))
-  let carry = srcVal > dstVal
-  let value = Word((dstVal - srcVal) and mask)
-  setArithFlags(vm, value, carry, isLane)
+  let (value, carry) =
+    subCore(decodeReg(vm, dstEnc), decodeReg(vm, srcEnc), dstEnc.isLane)
+  setArithFlags(vm, value, carry, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"SUB r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
   vm.ip += 3
+
+proc handleSubImm(vm: var Vm): FvmResult[void] {.defaultOk.} =
+  ?checkBounds(vm, 2)
+  let dstEnc = RegEncoding(?vm.bus.read8(Address(int(vm.ip) + 1)))
+  ?checkReg(dstEnc)
+  let (imm, advance) = ?readImmOperand(vm, dstEnc)
+  let (value, carry) = subCore(decodeReg(vm, dstEnc), imm, dstEnc.isLane)
+  setArithFlags(vm, value, carry, dstEnc.isLane)
+  writeReg(vm, dstEnc, value)
+  debug fmt"SUBI r{dstEnc.index}, 0x{imm:X} = 0x{value:04X}"
+  vm.ip += advance
 
 proc handleAnd(vm: var Vm): FvmResult[void] {.defaultOk.} =
   let (dstEnc, srcEnc) = ?readBinaryRegs(vm)
@@ -253,19 +301,21 @@ proc handleCmp(vm: var Vm): FvmResult[void] {.defaultOk.} =
   let (dstEnc, srcEnc) = ?readBinaryRegs(vm)
   if dstEnc.laneTag != srcEnc.laneTag:
     return "CMP operand width mismatch".err
-  let isLane = dstEnc.isLane
-  let mask =
-    if isLane:
-      uint32(ByteMask)
-    else:
-      0xFFFF'u32
-  let dstVal = uint32(decodeReg(vm, dstEnc))
-  let srcVal = uint32(decodeReg(vm, srcEnc))
-  let carry = srcVal > dstVal
-  let value = Word((dstVal - srcVal) and mask)
-  setArithFlags(vm, value, carry, isLane)
+  let (value, carry) =
+    subCore(decodeReg(vm, dstEnc), decodeReg(vm, srcEnc), dstEnc.isLane)
+  setArithFlags(vm, value, carry, dstEnc.isLane)
   debug fmt"CMP r{dstEnc.index}, r{srcEnc.index} flags Z={vm.flags.zero} N={vm.flags.negative} C={vm.flags.carry}"
   vm.ip += 3
+
+proc handleCmpImm(vm: var Vm): FvmResult[void] {.defaultOk.} =
+  ?checkBounds(vm, 2)
+  let dstEnc = RegEncoding(?vm.bus.read8(Address(int(vm.ip) + 1)))
+  ?checkReg(dstEnc)
+  let (imm, advance) = ?readImmOperand(vm, dstEnc)
+  let (value, carry) = subCore(decodeReg(vm, dstEnc), imm, dstEnc.isLane)
+  setArithFlags(vm, value, carry, dstEnc.isLane)
+  debug fmt"CMPI r{dstEnc.index}, 0x{imm:X} flags Z={vm.flags.zero} N={vm.flags.negative} C={vm.flags.carry}"
+  vm.ip += advance
 
 # Jumps and subroutines
 
@@ -372,7 +422,7 @@ proc handleRet(vm: var Vm): FvmResult[void] {.defaultOk.} =
   vm.ip = target
 
 proc handleOut(vm: var Vm): FvmResult[void] {.defaultOk.} =
-  ## OUT port8, enc  --  encoding: [Out, port, enc]
+  # Encoding: [Out, port, enc]
   ?checkBounds(vm, 3)
   let port = ?vm.bus.read8(Address(int(vm.ip) + 1))
   let enc = ?readRegEnc(vm, 2)
@@ -387,7 +437,7 @@ proc handleOut(vm: var Vm): FvmResult[void] {.defaultOk.} =
   vm.ip += 3
 
 proc handleIn(vm: var Vm): FvmResult[void] {.defaultOk.} =
-  ## IN enc, port8  --  encoding: [In, enc, port]
+  # Encoding: [In, enc, port]
   ?checkBounds(vm, 3)
   let enc = ?readRegEnc(vm, 1)
   let port = ?vm.bus.read8(Address(int(vm.ip) + 2))
@@ -459,11 +509,14 @@ constArray[OpCode, InstructionDef](instructions):
     InstructionDef(mnemonic: "SEXT", handler: handleSextRegReg)
   result[OpCode.Add] = InstructionDef(mnemonic: "ADD", handler: handleAdd)
   result[OpCode.Sub] = InstructionDef(mnemonic: "SUB", handler: handleSub)
+  result[OpCode.AddImm] = InstructionDef(mnemonic: "ADDI", handler: handleAddImm)
+  result[OpCode.SubImm] = InstructionDef(mnemonic: "SUBI", handler: handleSubImm)
   result[OpCode.And] = InstructionDef(mnemonic: "AND", handler: handleAnd)
   result[OpCode.Or] = InstructionDef(mnemonic: "OR", handler: handleOr)
   result[OpCode.Xor] = InstructionDef(mnemonic: "XOR", handler: handleXor)
   result[OpCode.Not] = InstructionDef(mnemonic: "NOT", handler: handleNot)
   result[OpCode.Cmp] = InstructionDef(mnemonic: "CMP", handler: handleCmp)
+  result[OpCode.CmpImm] = InstructionDef(mnemonic: "CMPI", handler: handleCmpImm)
   result[OpCode.Jmp] = InstructionDef(mnemonic: "JMP", handler: handleJmp)
   result[OpCode.JmpReg] = InstructionDef(mnemonic: "JMP", handler: handleJmpReg)
   result[OpCode.Jz] = InstructionDef(mnemonic: "JZ", handler: handleJz)
@@ -483,5 +536,4 @@ constArray[OpCode, InstructionDef](instructions):
   result[OpCode.Store] = InstructionDef(mnemonic: "STORE", handler: handleStore)
 
 proc getInstructionDef*(opcode: OpCode): InstructionDef =
-  ## Returns the InstructionDef for a given opcode.  Used by core.step.
   instructions[opcode]

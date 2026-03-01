@@ -180,28 +180,34 @@ SEXT r, rh
 
 ### ADD
 
-Adds source to destination, result in destination.
+Adds source to destination, result in destination. Source can be a register or immediate.
 
 Flags: C set on unsigned overflow, N set if high bit of result is set.
 
 ```
-ADD  r,  r
-ADD  rl, rl
-ADD  rh, rh
+ADD r,  r
+ADD rl, rl
+ADD rh, rh
+ADD r,  imm16
+ADD rl, imm8
+ADD rh, imm8
 ```
 
 ---
 
 ### SUB
 
-Subtracts source from destination, result in destination.
+Subtracts source from destination, result in destination. Source can be a register or immediate.
 
 Flags: C set on unsigned underflow (borrow), N set if high bit of result is set.
 
 ```
-SUB  r,  r
-SUB  rl, rl
-SUB  rh, rh
+SUB r,  r
+SUB rl, rl
+SUB rh, rh
+SUB r,  imm16
+SUB rl, imm8
+SUB rh, imm8
 ```
 
 ---
@@ -256,14 +262,17 @@ NOT  rh
 
 ### CMP
 
-Computes `dst - src` and sets flags, discards the result. Use before conditional jumps.
+Computes `dst - src` and sets flags, discards the result. Source can be a register or immediate. Use before conditional jumps.
 
 Flags: Z set if equal, C set if src > dst (unsigned), N set if high bit of result is set.
 
 ```
-CMP  r,  r
-CMP  rl, rl
-CMP  rh, rh
+CMP r,  r
+CMP rl, rl
+CMP rh, rh
+CMP r,  imm16
+CMP rl, imm8
+CMP rh, imm8
 ```
 
 ---

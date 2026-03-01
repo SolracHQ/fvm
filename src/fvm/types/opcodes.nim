@@ -17,18 +17,21 @@ type OpCode* {.pure.} = enum
   ZeroExtend ## ZEXT enc, enc  (zero-extend low byte to full register)
   SignExtend ## SEXT enc, enc  (sign-extend low byte to full register)
 
-  # Arithmetic (reserved)
+  # Arithmetic 
   Add ## ADD  enc, enc
   Sub ## SUB  enc, enc
+  AddImm ## ADDI enc, imm16  (imm8 when RegLaneBit set in enc)
+  SubImm ## SUBI enc, imm16  (imm8 when RegLaneBit set in enc)
 
-  # Bitwise (reserved)
+  # Bitwise 
   And ## AND  enc, enc
   Or ## OR   enc, enc
   Xor ## XOR  enc, enc
   Not ## NOT  enc
 
-  # Comparison / Branches (reserved)
+  # Comparison / Branches 
   Cmp ## CMP  enc, enc  (sets flags, no result stored)
+  CmpImm ## CMPI enc, imm16  (cmpi imm8 when RegLaneBit set in enc)
   Jmp ## JMP  addr16
   JmpReg ## JMP  enc
   Jz ## JZ   addr16  (jump if zero flag set)
@@ -45,7 +48,7 @@ type OpCode* {.pure.} = enum
   CallReg ## CALL enc     (push ip+2, jump)
   Ret ## RET          (pop addr, jump)
 
-  # Peripherals (reserved)
+  # Peripherals 
   In ## IN   enc, port8  (read byte from I/O port)
   Out ## OUT  port8, enc  (write byte to I/O port)
 

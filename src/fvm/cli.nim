@@ -35,11 +35,6 @@ proc execVm(vm: var Vm, step: bool): int =
 proc loadAndRun(
     obj: FvmObject, maps: seq[string], debugLevel: string, step: bool
 ): int =
-  let levelResult = parseDebugLevel(debugLevel)
-  if levelResult.isErr:
-    error levelResult.error
-    return 1
-  setDebugLevel(levelResult.get())
   var vm = block:
     let r = setupVm(obj, maps)
     if r.isErr:
@@ -50,9 +45,12 @@ proc loadAndRun(
 
 # Commands
 
-proc assemble*(source: string, output = ""): int =
+proc assemble*(source: string, output = "", debugLevel = "lvlInfo"): int =
   ## Assembles a .fa source file into a .fo object file.
-  initLogger()
+  let loggerResult = initLogger(debugLevel)
+  if loggerResult.isErr:
+    error loggerResult.error
+    return 1
   let res = assembleFile(source)
   if res.isErr:
     error "Assembler error: " & res.error
@@ -73,7 +71,10 @@ proc run*(
     objectFile: string, map: seq[string] = @[], debugLevel = "lvlInfo", step = false
 ): int =
   ## Runs a .fo object file.
-  initLogger()
+  let loggerResult = initLogger(debugLevel)
+  if loggerResult.isErr:
+    error loggerResult.error
+    return 1
   let bytes =
     try:
       cast[seq[Byte]](readFile(objectFile))
@@ -92,7 +93,10 @@ proc runAsm*(
     source: string, map: seq[string] = @[], debugLevel = "lvlError", step = false
 ): int =
   ## Assembles a .fa source file and runs it without writing an object file.
-  initLogger()
+  let loggerResult = initLogger(debugLevel)
+  if loggerResult.isErr:
+    error loggerResult.error
+    return 1
   let obj = block:
     let r = assembleFile(source)
     if r.isErr:

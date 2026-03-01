@@ -1,0 +1,29 @@
+# Basic Hello World using raw output mapped to stdout
+# Run with: fvm run-asm -m0:::raw -s examples/hello_world.fa
+# An equivalent c program would be:
+#   #include <stdio.h>
+#   int main() {
+#     char *msg = "Hello, world!\n";
+#     while (*msg) {
+#       char c = *msg;
+#       putchar(c);
+#       msg++;
+#     }
+#     return 0;
+#   }
+
+.rodata
+  msg: db "Hello, world!\n", 0
+
+.code
+main:
+  MOV r1, msg             # r1 = address of msg
+  loop:
+    LOAD r2l, r1          # r2l = byte at r1
+    CMP r2l, 0            # check for null terminator
+    JZ .done              # if zero, we're done
+    ADD r1, 1             # r1++ (move to next byte)
+    OUT 0, r2l            # write byte to port 0
+    JMP loop              # repeat
+  .done:
+  HALT

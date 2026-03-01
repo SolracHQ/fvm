@@ -12,13 +12,6 @@ export logging ## re-export so importers can use `debug`, `info`, etc.
 
 var consoleLogger: ConsoleLogger ## nil until initLogger() is called
 
-proc initLogger*() =
-  ## Installs the console log handler.  Call exactly once at program startup
-  ## (i.e. from the CLI entry point).  Idempotent: a second call is a no-op.
-  if consoleLogger == nil:
-    consoleLogger = newConsoleLogger()
-    addHandler(consoleLogger)
-
 proc parseDebugLevel*(value: string): FvmResult[Level] =
   let normalized = value.strip().toLowerAscii()
   case normalized
@@ -41,3 +34,15 @@ proc parseDebugLevel*(value: string): FvmResult[Level] =
 
 proc setDebugLevel*(level: Level) =
   setLogFilter(level)
+
+proc initLogger*(level: string): FvmResult[void] =
+  ## Installs the console log handler.  Call exactly once at program startup
+  ## (i.e. from the CLI entry point).  Idempotent: a second call is a no-op.
+  if consoleLogger == nil:
+    consoleLogger = newConsoleLogger()
+    addHandler(consoleLogger)
+    let levelResult = parseDebugLevel(level)
+    if levelResult.isErr:
+      return ("Invalid debug level: " & levelResult.error).err
+    setDebugLevel(levelResult.get())
+  ok()
