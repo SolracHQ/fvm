@@ -16,6 +16,7 @@ type
   MapRepr* = enum
     reprRaw
     reprHex
+    reprDec
 
   MapMode* = enum
     modeIn
@@ -68,6 +69,8 @@ proc parseMapSpec*(raw: string): FvmResult[MapSpec] =
         reprRaw
       of "hex":
         reprHex
+      of "dec":
+        reprDec
       else:
         return ("Invalid repr in --map spec: " & parts[3]).err
     else:
@@ -117,6 +120,20 @@ proc makeReadProc(stream: File, repr: MapRepr): proc(): FvmResult[Byte] =
         "EOF on port read".err
       except ValueError as e:
         ("Bad hex input on port read: " & e.msg).err
+  of reprDec:
+    proc(): FvmResult[Byte] =
+      try:
+        let line = stream.readLine().strip()
+        if line.len == 0:
+          return "EOF on port read".err
+        let val = parseInt(line)
+        if val < 0 or val > 255:
+          return ("Dec input out of byte range: " & line).err
+        Byte(val).ok
+      except EOFError:
+        "EOF on port read".err
+      except ValueError as e:
+        ("Bad decimal input on port read: " & e.msg).err
 
 proc makeWriteProc(stream: File, repr: MapRepr): proc(v: Byte): FvmResult[void] =
   case repr
@@ -132,6 +149,14 @@ proc makeWriteProc(stream: File, repr: MapRepr): proc(v: Byte): FvmResult[void] 
     proc(v: Byte): FvmResult[void] =
       try:
         stream.write("0x" & toHex(int(v), 2) & "\n")
+        stream.flushFile()
+        ok()
+      except IOError as e:
+        e.msg.err
+  of reprDec:
+    proc(v: Byte): FvmResult[void] =
+      try:
+        stream.write($int(v) & "\n")
         stream.flushFile()
         ok()
       except IOError as e:

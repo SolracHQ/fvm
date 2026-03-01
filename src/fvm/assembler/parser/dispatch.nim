@@ -370,7 +370,7 @@ proc parseLoadInstruction(assembler: var Assembler, line: int): FvmResult[Instru
       {TkRegister}, "Expected address register for LOAD at line " & $line
     )
   ?consumeEol(assembler, "LOAD", line)
-  if addrTok.regEncoding.isLane or addrTok.regEncoding.isSp:
+  if addrTok.regEncoding.isLane:
     return ("LOAD address register must be full-width at line " & $line).err
 
   Instruction(
@@ -392,7 +392,7 @@ proc parseStoreInstruction(
       {TkRegister}, "Expected source register for STORE at line " & $line
     )
   ?consumeEol(assembler, "STORE", line)
-  if addrTok.regEncoding.isLane or addrTok.regEncoding.isSp:
+  if addrTok.regEncoding.isLane:
     return ("STORE address register must be full-width at line " & $line).err
 
   Instruction(

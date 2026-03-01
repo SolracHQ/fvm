@@ -459,7 +459,7 @@ proc handleLoad(vm: var Vm): FvmResult[void] {.defaultOk.} =
   let regs = ?readBinaryRegs(vm)
   let dstEnc = regs.dst
   let addrEnc = regs.src
-  if addrEnc.isLane or addrEnc.isSp:
+  if addrEnc.isLane:
     return "LOAD address register must be full-width".err
   let address = Address(decodeReg(vm, addrEnc))
   if dstEnc.isLane:
@@ -476,7 +476,7 @@ proc handleStore(vm: var Vm): FvmResult[void] {.defaultOk.} =
   let regs = ?readBinaryRegs(vm)
   let addrEnc = regs.dst
   let srcEnc = regs.src
-  if addrEnc.isLane or addrEnc.isSp:
+  if addrEnc.isLane:
     return "STORE address register must be full-width".err
   let address = Address(decodeReg(vm, addrEnc))
   if srcEnc.isLane:
