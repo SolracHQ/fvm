@@ -1,0 +1,35 @@
+# Arithmetic and bitwise operations
+#
+# Demonstrates ADD, SUB, AND, OR, XOR, NOT, and CMP.
+# Run with: fvm run-asm -s examples/arithmetic.fa --step
+
+# Integer arithmetic
+MOV  r0, 10
+MOV  r1, 3
+ADD  r0, r1        # r0 = 13
+
+MOV  r2, 100
+MOV  r3, 37
+SUB  r2, r3        # r2 = 63
+
+# Bitwise operations
+MOV  r4, 0xFF00
+MOV  r5, 0x0F0F
+AND  r4, r5        # r4 = 0x0F00
+OR   r4, r5        # r4 = 0x0F0F
+XOR  r4, r5        # r4 = 0x0000  (r4 == r5 at this point, clears all bits)
+
+MOV  r6, 0x00FF
+NOT  r6            # r6 = 0xFF00
+
+# Byte-lane arithmetic
+MOV  r7l, 0x05
+MOV  r8l, 0x03
+ADD  r7l, r8l      # r7l = 0x08
+
+# CMP sets flags but does not modify registers
+MOV  r9, 42
+MOV  r10, 42
+CMP  r9, r10       # Z=true (equal), C=false, N=false
+
+HALT

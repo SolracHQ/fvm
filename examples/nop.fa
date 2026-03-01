@@ -1,0 +1,3 @@
+# Fantasy Assembly File with a single nop instruction
+NOP
+HALT

@@ -1,0 +1,19 @@
+# Register and stack test
+MOV r0, 42
+PUSH r0
+MOV r0, 0
+POP r1
+MOV r2, r1
+
+# 16-bit immediate
+MOV r3, 0x1234
+
+# Byte-lane access: write low byte only, high byte is preserved
+MOV r4, 0xABCD
+MOV r4l, 0xFF
+
+# Byte-lane stack round-trip
+PUSH r4l
+POP r5l
+
+HALT

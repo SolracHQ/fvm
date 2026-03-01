@@ -1,0 +1,27 @@
+# jumps.fa
+#
+# Demonstrates: global and local labels, JNZ loop, CALL/RET, SP read.
+#
+# Computes sum_down(3) = 3 + 2 + 1 = 6 via a subroutine.
+# Result ends up in r0 = 6.  r15 holds the initial stack pointer.
+
+main:
+    MOV r15, sp         # snapshot SP before any stack activity
+    MOV r0, 3
+    CALL sum_down       # r0 = 6 on return
+    HALT
+
+# sum_down: sum all integers from r0 down to 1, result in r0
+# args   : r0 = starting value (>= 1)
+# returns: r0 = sum
+# clobbers: r1, r2
+sum_down:
+
+    MOV r1, 0           # r1 = accumulator
+    MOV r2, 1           # r2 = constant decrement
+.loop:
+    ADD r1, r0          # r1 += r0
+    SUB r0, r2          # r0--
+    JNZ .loop           # repeat while r0 != 0
+    MOV r0, r1          # move result into r0 for return
+    RET

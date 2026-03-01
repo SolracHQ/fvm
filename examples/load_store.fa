@@ -1,0 +1,38 @@
+# Memory sections example
+#
+# Demonstrates .rodata, .data, db/dw, char literals, LOAD and STORE.
+# Run with: fvm run-asm -s examples/load_store.fa -m0:::hex
+#
+# Expected output:
+#   0x48  ('H' from rodata string)
+#   0x2A  (42, the word from rodata table low byte)
+#   0x37  (55, written to .data counter then read back)
+
+.rodata
+    greeting: db 'H', 'i', 0    # null-terminated string
+    table:    dw 42, 0x1234     # 16-bit constants
+
+.data
+    counter: dw 0               # mutable word, starts at zero
+
+.code
+
+main:
+    # Read first byte of greeting ('H' = 0x48) and print it
+    MOV  r0, greeting
+    LOAD r1l, r0
+    OUT  0, r1l                 # prints: 0x48
+
+    # Read the first word from table (42 = 0x002A), print low byte
+    MOV  r0, table
+    LOAD r2, r0
+    OUT  0, r2l                 # prints: 0x2A
+
+    # Write 55 (0x37) into counter, then read it back and print
+    MOV  r0, counter
+    MOV  r3l, 55
+    STORE r0, r3l               # byte store: write 0x37 to counter's address
+    LOAD  r4l, r0               # byte load: read it back
+    OUT   0, r4l                # prints: 0x37
+
+    HALT

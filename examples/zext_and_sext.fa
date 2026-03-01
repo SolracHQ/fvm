@@ -1,0 +1,10 @@
+# test zext and sext instructions
+MOV r0l, 0xFF
+ZEXT r1, r0l
+push r1
+
+MOV r2l, 0x80
+SEXT r3, r2l
+push r3
+
+HALT
