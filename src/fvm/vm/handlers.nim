@@ -71,9 +71,9 @@ proc readBinaryRegs(vm: Vm): FvmResult[tuple[dst, src: RegEncoding]] =
 
 proc setArithFlags(vm: var Vm, value: Word, carry: bool, isLane: bool) =
   let highBit = if isLane: 7'u16 else: 15'u16
-  vm.flags.zero = value == 0
-  vm.flags.negative = (value shr highBit) != 0
-  vm.flags.carry = carry
+  vm.flags.setBooleanFlag(Zero, value == 0)
+  vm.flags.setBooleanFlag(Negative, (value shr highBit) != 0)
+  vm.flags.setBooleanFlag(Carry, carry)
 
 # Arithmetic cores
 #
