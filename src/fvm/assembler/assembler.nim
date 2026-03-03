@@ -25,7 +25,7 @@ proc assembleSource*(
   ## of the .code section, which follows any .rodata bytes.
   let tokens = (?tokenizeAssembly(source))
   let output = (?parseTokens(tokens))
-  let code = (?emitBytecode(output.instructions))
+  let emitResult = (?emitBytecodeWithRelocations(output.instructions))
   let ep =
     if entryPoint == 0:
       Address(output.rodata.len)
@@ -36,8 +36,9 @@ proc assembleSource*(
     version: FvmVersion,
     entryPoint: ep,
     rodata: output.rodata,
-    code: code,
+    code: emitResult.code,
     data: output.data,
+    relocations: emitResult.relocations,
   ).ok
 
 proc assembleFile*(path: string, entryPoint: Address = 0'u16): FvmResult[FvmObject] =

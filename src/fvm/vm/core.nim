@@ -14,6 +14,22 @@ proc newVm*(): FvmResult[Vm] =
   ## and load program data before executing.
   Vm(bus: newBus(), ip: 0'u16, sp: StackBase, halted: false).ok
 
+proc applyRelocations(
+    mem: var seq[Byte], codeBase: Address, baseShift: uint16, relocations: seq[uint16]
+): FvmResult[void] =
+  ## Patches assembler-zero-relative addresses stored in .code by adding
+  ## baseShift (the offset from VM address 0 to the assembler's address 0,
+  ## i.e. IvtSize). codeBase locates each relocation entry in memory.
+  for reloc in relocations:
+    let off = int(codeBase) + int(reloc)
+    if off + 1 >= mem.len:
+      return ("Relocation offset out of range: " & $reloc).err
+    let original = (uint16(mem[off]) shl 8) or uint16(mem[off + 1])
+    let patched = original + baseShift
+    mem[off] = Byte(patched shr 8)
+    mem[off + 1] = Byte(patched and 0xFF)
+  ok()
+
 proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   ## Maps memory sections from an FvmObject and initialises the instruction
   ## pointer.  Three sections are supported:
@@ -24,11 +40,21 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   ##   stack    always at StackRegionBase (0xF000)
   ##
   ## Programs that contain only a .code section (no rodata/data fields set)
-  ## load correctly: the code region starts at 0x0000 and the rest of the
-  ## rule still applies.
-  let rodataBase = 0x0000'u16
-  let codeEnd = obj.rodata.len + obj.code.len
-  let dataEnd = codeEnd + obj.data.len
+  ## load correctly: the code region starts immediately after the IVT.
+  ##
+  ## Memory layout:
+  ##   0x0000  IVT     32 bytes (16 entries × 2 bytes), writable RAM
+  ##   0x0020  .rodata read-only constants (may be empty)
+  ##   0x0020+ .code   executable bytecode
+  ##          + .data   mutable initialised data
+  ##   0xF000  stack   4 KB
+  ##
+  ## Embedded 16-bit addresses in .code are assembler-zero-relative and are
+  ## shifted by IvtSize at load time via the relocation table.
+  let rodataBase = Address(IvtBase + IvtSize)
+  let codeBase = Address(uint16(rodataBase) + uint16(obj.rodata.len))
+  let dataBase = Address(uint16(codeBase) + uint16(obj.code.len))
+  let dataEnd = int(dataBase) + obj.data.len
 
   if dataEnd > int(StackRegionBase):
     return (
@@ -36,8 +62,6 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
       toHex(dataEnd, 4) & " but stack begins at 0x" & toHex(int(StackRegionBase), 4)
     ).err
 
-  let codeBase = Address(obj.rodata.len)
-  let dataBase = Address(codeEnd)
   # Write bytes into backing memory before mapping regions so writes bypass
   # the permission checks that will be installed below.
   if obj.rodata.len > 0:
@@ -47,6 +71,11 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   if obj.data.len > 0:
     vm.bus.writeRangeDirect(dataBase, obj.data)
 
+  # Shift all assembler-zero-relative addresses by IvtSize.
+  ?applyRelocations(vm.bus.mem, codeBase, IvtSize, obj.relocations)
+
+  # Map the IVT as writable RAM so kernel code can install handlers.
+  ?vm.bus.mapRegion(ramRegion(IvtBase, uint32(IvtSize), "ivt"))
   # Map sections as the appropriate region types.
   if obj.rodata.len > 0:
     ?vm.bus.mapRegion(romRegion(rodataBase, uint32(obj.rodata.len), "rodata"))
@@ -56,7 +85,8 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
     ?vm.bus.mapRegion(ramRegion(dataBase, uint32(obj.data.len), "data"))
   ?vm.bus.mapRegion(ramRegion(StackRegionBase, StackRegionSize, "stack"))
 
-  vm.ip = obj.entryPoint
+  # Entry point is assembler-zero-relative; shift it by IvtSize.
+  vm.ip = Address(uint16(obj.entryPoint) + IvtSize)
   ok()
 
 # Opcode dispatch

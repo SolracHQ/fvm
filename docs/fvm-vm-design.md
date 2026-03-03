@@ -24,15 +24,8 @@ Hardware interrupts (1-4) fire instead of halting. If the IVT entry for the faul
 
 `INT n` is a new instruction that triggers interrupt n directly from code. This is the mechanism for syscalls once privilege levels exist.
 
-The assembler will provide a syntax for populating the IVT, probably something like:
+The assembler will not provide special syntax for that, just will live in privileged memory region the kernel will be able to just LOAD 0, handler.
 
-```
-.ivt
-    [1] fault_handler
-    [15] syscall_handler
-```
-
-Entries not listed are left as zero (unhandled, VM halts on that interrupt).
 
 ---
 

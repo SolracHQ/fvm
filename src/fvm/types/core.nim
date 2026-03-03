@@ -18,11 +18,14 @@ const
   StackBase* = 0xFFFF'u16 ## Stack grows downward from here
   StackRegionBase* = 0xF000'u16 ## Stack region starts here
   StackRegionSize* = 0x1000'u32 ## 4 KB stack region
+  IvtBase* = 0x0000'u16.Address ## Interrupt vector table base address
+  IvtEntries* = 16 ## Number of IVT entries
+  IvtSize* = IvtEntries.Address * 2 ## 16 entries × 2 bytes each = 32 bytes
   GeneralRegisterCount* = 16
   MaxPortCount* = 256 ## Number of I/O ports for IN/OUT
   ByteMask* = 0xFF'u16 ## Low-byte extraction mask
-  FvmHeaderSize* = 13
-    ## magic(4) + version(1) + entry(2) + rodataLen(2) + codeLen(2) + dataLen(2)
+  FvmHeaderSize* = 15
+    ## magic(4) + version(1) + entry(2) + rodataLen(2) + codeLen(2) + dataLen(2) + relocCount(2)
 
   # Common permission sets
   PermRom*: Permissions = {Read} ## read-only: .rodata

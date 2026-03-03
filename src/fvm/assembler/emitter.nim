@@ -10,9 +10,27 @@ import ../types/core
 import ../types/errors
 import ./instructions
 
-proc emitBytecode*(instructions: openArray[Instruction]): FvmResult[seq[Byte]] =
+type EmitResult* = object
+  code*: seq[Byte]
+  relocations*: seq[uint16]
+
+proc emitBytecodeWithRelocations*(
+    instructions: openArray[Instruction]
+): FvmResult[EmitResult] =
   var code: seq[Byte]
+  var relocations: seq[uint16]
+
   for instr in instructions:
+    let instrStart = code.len
     code.add(Byte(ord(instr.opcode)))
-    code.add(instr.operands)
-  code.ok
+    for operandByte in instr.operands:
+      code.add(operandByte)
+
+    # Record relocations for address operands
+    for addrOffset in instr.addressOperandOffsets:
+      # addrOffset is relative to the start of operands
+      # The actual offset in code is 1 (opcode) + addrOffset
+      let codeOffset = instrStart + 1 + addrOffset
+      relocations.add(uint16(codeOffset))
+
+  EmitResult(code: code, relocations: relocations).ok

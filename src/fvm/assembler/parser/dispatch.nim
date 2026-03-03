@@ -90,7 +90,7 @@ proc parseNoOperandInstruction(
   ?consumeEol(assembler, mnemonic, line)
   if extraCount > 0:
     return (mnemonic & " takes no operands (line " & $line & ")").err
-  Instruction(line: line, opcode: opcode, operands: @[]).ok
+  Instruction(line: line, opcode: opcode, operands: @[], addressOperandOffsets: @[]).ok
 
 proc parseOneRegisterInstruction(
     assembler: var Assembler, line: int, opcode: OpCode, mnemonic: string
@@ -100,7 +100,12 @@ proc parseOneRegisterInstruction(
       {TkRegister}, "Expected register for " & mnemonic & " at line " & $line
     )
   ?consumeEol(assembler, mnemonic, line)
-  Instruction(line: line, opcode: opcode, operands: @[Byte(regTok.regEncoding)]).ok
+  Instruction(
+    line: line,
+    opcode: opcode,
+    operands: @[Byte(regTok.regEncoding)],
+    addressOperandOffsets: @[],
+  ).ok
 
 proc parseBinaryRegInstruction(
     assembler: var Assembler, line: int, opcode: OpCode, mnemonic: string
@@ -124,7 +129,12 @@ proc parseBinaryRegInstruction(
       mnemonic & " lane mismatch at line " & $line & ": " & dstTok.regSource & " vs " &
       srcTok.regSource
     ).err
-  Instruction(line: line, opcode: opcode, operands: @[Byte(dstEnc), Byte(srcEnc)]).ok
+  Instruction(
+    line: line,
+    opcode: opcode,
+    operands: @[Byte(dstEnc), Byte(srcEnc)],
+    addressOperandOffsets: @[],
+  ).ok
 
 proc parseExtendInstruction(
     assembler: var Assembler, line: int, opcode: OpCode, mnemonic: string
@@ -150,7 +160,12 @@ proc parseExtendInstruction(
   if srcEnc.isWord:
     return
       ("Source register must be byte-lane for " & mnemonic & " at line " & $line).err
-  Instruction(line: line, opcode: opcode, operands: @[Byte(dstEnc), Byte(srcEnc)]).ok
+  Instruction(
+    line: line,
+    opcode: opcode,
+    operands: @[Byte(dstEnc), Byte(srcEnc)],
+    addressOperandOffsets: @[],
+  ).ok
 
 proc parseBinaryRegOrImmInstruction(
     assembler: var Assembler, line: int, immOp: OpCode, regOp: OpCode, mnemonic: string
@@ -183,7 +198,12 @@ proc parseBinaryRegOrImmInstruction(
           $line
         ).err
       return
-        Instruction(line: line, opcode: immOp, operands: @[Byte(dstEnc), Byte(imm)]).ok
+        Instruction(
+          line: line,
+          opcode: immOp,
+          operands: @[Byte(dstEnc), Byte(imm)],
+          addressOperandOffsets: @[],
+        ).ok
     else:
       let imm = srcTok.immValue
       if imm < 0 or imm > 0xFFFF:
@@ -197,6 +217,7 @@ proc parseBinaryRegOrImmInstruction(
           opcode: immOp,
           operands:
             @[Byte(dstEnc), Byte((imm16 shr 8) and ByteMask), Byte(imm16 and ByteMask)],
+          addressOperandOffsets: @[],
         ).ok
   of TkMnemonic:
     let dstEnc = dstTok.regEncoding
@@ -213,6 +234,7 @@ proc parseBinaryRegOrImmInstruction(
           @[
             Byte(dstEnc), Byte((lblAddr shr 8) and ByteMask), Byte(lblAddr and ByteMask)
           ],
+        addressOperandOffsets: @[1],
       ).ok
   else: # TkRegister
     let dstEnc = dstTok.regEncoding
@@ -223,7 +245,12 @@ proc parseBinaryRegOrImmInstruction(
         srcTok.regSource
       ).err
     return
-      Instruction(line: line, opcode: regOp, operands: @[Byte(dstEnc), Byte(srcEnc)]).ok
+      Instruction(
+        line: line,
+        opcode: regOp,
+        operands: @[Byte(dstEnc), Byte(srcEnc)],
+        addressOperandOffsets: @[],
+      ).ok
 
 proc parseJumpInstruction(
     assembler: var Assembler, line: int, immOp: OpCode, regOp: OpCode, mnemonic: string
@@ -236,7 +263,13 @@ proc parseJumpInstruction(
   ?consumeEol(assembler, mnemonic, line)
   case tok.kind
   of TkRegister:
-    return Instruction(line: line, opcode: regOp, operands: @[Byte(tok.regEncoding)]).ok
+    return
+      Instruction(
+        line: line,
+        opcode: regOp,
+        operands: @[Byte(tok.regEncoding)],
+        addressOperandOffsets: @[],
+      ).ok
   of TkImmediate:
     let immAddr = tok.immValue
     if immAddr < 0 or immAddr > 0xFFFF:
@@ -244,7 +277,10 @@ proc parseJumpInstruction(
     let a = Word(immAddr)
     return
       Instruction(
-        line: line, opcode: immOp, operands: @[Byte(a shr 8), Byte(a and 0xFF)]
+        line: line,
+        opcode: immOp,
+        operands: @[Byte(a shr 8), Byte(a and 0xFF)],
+        addressOperandOffsets: @[],
       ).ok
   of TkMnemonic:
     let lblAddr = ?assembler.resolveLabel(tok.mnemonic, line)
@@ -253,6 +289,7 @@ proc parseJumpInstruction(
         line: line,
         opcode: immOp,
         operands: @[Byte(lblAddr shr 8), Byte(lblAddr and 0xFF)],
+        addressOperandOffsets: @[0],
       ).ok
   else:
     return ("Unexpected token for " & mnemonic & " at line " & $line).err
@@ -340,7 +377,10 @@ proc parseInInstruction(assembler: var Assembler, line: int): FvmResult[Instruct
     return ("Port number out of range (0..255) for IN at line " & $line).err
 
   Instruction(
-    line: line, opcode: OpCode.In, operands: @[Byte(dstTok.regEncoding), Byte(port)]
+    line: line,
+    opcode: OpCode.In,
+    operands: @[Byte(dstTok.regEncoding), Byte(port)],
+    addressOperandOffsets: @[],
   ).ok
 
 proc parseOutInstruction(assembler: var Assembler, line: int): FvmResult[Instruction] =
@@ -356,7 +396,10 @@ proc parseOutInstruction(assembler: var Assembler, line: int): FvmResult[Instruc
     return ("Port number out of range (0..255) for OUT at line " & $line).err
 
   Instruction(
-    line: line, opcode: OpCode.Out, operands: @[Byte(port), Byte(srcTok.regEncoding)]
+    line: line,
+    opcode: OpCode.Out,
+    operands: @[Byte(port), Byte(srcTok.regEncoding)],
+    addressOperandOffsets: @[],
   ).ok
 
 proc parseLoadInstruction(assembler: var Assembler, line: int): FvmResult[Instruction] =
@@ -377,6 +420,7 @@ proc parseLoadInstruction(assembler: var Assembler, line: int): FvmResult[Instru
     line: line,
     opcode: OpCode.Load,
     operands: @[Byte(dstTok.regEncoding), Byte(addrTok.regEncoding)],
+    addressOperandOffsets: @[],
   ).ok
 
 proc parseStoreInstruction(
@@ -399,6 +443,7 @@ proc parseStoreInstruction(
     line: line,
     opcode: OpCode.Store,
     operands: @[Byte(addrTok.regEncoding), Byte(srcTok.regEncoding)],
+    addressOperandOffsets: @[],
   ).ok
 
 # Dispatch table

@@ -12,6 +12,8 @@ type Instruction* = object
   line*: int ## Source line number (for error reporting)
   opcode*: OpCode
   operands*: seq[Byte]
+  addressOperandOffsets*: seq[int]
+    ## Byte offsets in operands that contain 16-bit addresses
 
 type ParseOutput* = object
   ## Combined output of the parser: three sections plus the resolved

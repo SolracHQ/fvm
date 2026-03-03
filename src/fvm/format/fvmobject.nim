@@ -30,6 +30,7 @@ type FvmObject* = object
   rodata*: seq[Byte] ## Read-only constants and strings
   code*: seq[Byte] ## Executable bytecode
   data*: seq[Byte] ## Mutable initialized data
+  relocations*: seq[uint16] ## Offsets into .code section that hold 16-bit addresses
 
 # Serialization
 
@@ -38,6 +39,7 @@ proc serialize*(obj: FvmObject): seq[Byte] =
   let rodataLen = uint16(obj.rodata.len)
   let codeLen = uint16(obj.code.len)
   let dataLen = uint16(obj.data.len)
+  let relocCount = uint16(obj.relocations.len)
   result =
     @[
       FvmMagic[0],
@@ -53,10 +55,16 @@ proc serialize*(obj: FvmObject): seq[Byte] =
       Byte(codeLen and ByteMask),
       Byte((dataLen shr 8) and ByteMask),
       Byte(dataLen and ByteMask),
+      Byte((relocCount shr 8) and ByteMask),
+      Byte(relocCount and ByteMask),
     ]
   result.add(obj.rodata)
   result.add(obj.code)
   result.add(obj.data)
+  # Append relocations as 2-byte big-endian values
+  for reloc in obj.relocations:
+    result.add(Byte((reloc shr 8) and ByteMask))
+    result.add(Byte(reloc and ByteMask))
 
 # Deserialization
 
@@ -81,22 +89,31 @@ proc deserialize*(data: openArray[Byte]): FvmResult[FvmObject] =
   let rodataLen = int((uint16(data[7]) shl 8) or uint16(data[8]))
   let codeLen = int((uint16(data[9]) shl 8) or uint16(data[10]))
   let dataLen = int((uint16(data[11]) shl 8) or uint16(data[12]))
+  let relocCount = int((uint16(data[13]) shl 8) or uint16(data[14]))
   let totalPayload = rodataLen + codeLen + dataLen
 
-  if data.len < FvmHeaderSize + totalPayload:
+  if data.len < FvmHeaderSize + totalPayload + (relocCount * 2):
     return (
-      "FVM object truncated: header declares " & $totalPayload &
-      " payload bytes but only " & $(data.len - FvmHeaderSize) & " are present"
+      "FVM object truncated: header declares " & $totalPayload & " payload bytes and " &
+      $relocCount & " relocations but insufficient data present"
     ).err
 
   let rodataStart = FvmHeaderSize
   let codeStart = rodataStart + rodataLen
   let dataStart = codeStart + codeLen
+  let relocStart = dataStart + dataLen
+
+  var relocations: seq[uint16]
+  for i in 0 ..< relocCount:
+    let reloffset = relocStart + (i * 2)
+    let reloc = uint16((uint16(data[reloffset]) shl 8) or uint16(data[reloffset + 1]))
+    relocations.add(reloc)
 
   FvmObject(
     version: version,
     entryPoint: entryPoint,
     rodata: @(data[rodataStart ..< codeStart]),
     code: @(data[codeStart ..< dataStart]),
-    data: @(data[dataStart ..< dataStart + dataLen]),
+    data: @(data[dataStart ..< relocStart]),
+    relocations: relocations,
   ).ok
