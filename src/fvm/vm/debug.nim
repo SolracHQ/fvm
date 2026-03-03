@@ -19,7 +19,7 @@ proc formatRegisters*(vm: Vm): string =
 
 proc formatFlags*(vm: Vm): string =
   ## Returns a compact flag-register display.
-  fmt"Z={int(vm.flags.zero)} C={int(vm.flags.carry)} N={int(vm.flags.negative)} V={int(vm.flags.overflow)}"
+  fmt"Z={int(vm.flags.zero)} C={int(vm.flags.carry)} N={int(vm.flags.negative)}"
 
 # Stack window
 

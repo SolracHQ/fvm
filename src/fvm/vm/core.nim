@@ -56,7 +56,7 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   let dataBase = Address(uint16(codeBase) + uint16(obj.code.len))
   let dataEnd = int(dataBase) + obj.data.len
 
-  if dataEnd > int(StackRegionBase):
+  if obj.rodata.len + obj.code.len + obj.data.len + IvtSize.int > int(StackRegionBase):
     return (
       "Program sections exceed available address space: data ends at 0x" &
       toHex(dataEnd, 4) & " but stack begins at 0x" & toHex(int(StackRegionBase), 4)
