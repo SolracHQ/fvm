@@ -6,7 +6,7 @@
 import std/logging
 import std/strutils
 
-import ./types/errors
+import types/core
 
 export logging ## re-export so importers can use `debug`, `info`, etc.
 

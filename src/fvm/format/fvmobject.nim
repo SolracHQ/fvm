@@ -16,9 +16,8 @@
 ## Total fixed header size = 13 bytes (FvmHeaderSize constant in types/core).
 
 import ../types/core
-import ../types/errors
 
-export errors ## re-export so importers can use FvmResult and results procs directly
+export core ## re-export so importers can use FvmResult and results procs directly
 
 const
   FvmMagic*: array[4, Byte] = [0x46'u8, 0x56, 0x4D, 0x21] ## "FVM!"

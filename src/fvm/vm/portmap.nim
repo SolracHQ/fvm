@@ -7,7 +7,6 @@ import std/strutils
 import std/tables
 
 import ../types/core
-import ../types/errors
 import ./ports
 
 export ports

@@ -18,12 +18,12 @@
 .code
 main:
   MOV r1, msg             # r1 = address of msg
-  loop:
+  .loop:
     LOAD r2l, r1          # r2l = byte at r1
     CMP r2l, 0            # check for null terminator
     JZ .done              # if zero, we're done
     ADD r1, 1             # r1++ (move to next byte)
     OUT 0, r2l            # write byte to port 0
-    JMP loop              # repeat
+    JMP .loop             # repeat
   .done:
   HALT

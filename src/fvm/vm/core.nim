@@ -1,6 +1,7 @@
 ## FVM core: VM lifecycle and execution engine.
 
 import std/strutils
+import std/logging
 
 import ../format/fvmobject as fmtobject
 import ./handlers
@@ -84,6 +85,8 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   if obj.data.len > 0:
     ?vm.bus.mapRegion(ramRegion(dataBase, uint32(obj.data.len), "data"))
   ?vm.bus.mapRegion(ramRegion(StackRegionBase, StackRegionSize, "stack"))
+
+  debug "Entry point: 0x" & toHex(int(obj.entryPoint), 4)
 
   # Entry point is assembler-zero-relative; shift it by IvtSize.
   vm.ip = Address(uint16(obj.entryPoint) + IvtSize)

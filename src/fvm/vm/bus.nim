@@ -20,7 +20,6 @@
 import std/strutils
 
 import ../types/core
-import ../types/errors
 
 export core ## Re-export so callers get Permission/Permissions without a separate import
 export errors ## Re-export so callers get FvmResult without a separate import

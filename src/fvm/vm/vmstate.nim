@@ -5,7 +5,6 @@ import ./bus
 import ./ports
 import ../types/core
 import ../types/flags
-import ../types/errors
 
 export bus, ports, core, flags, errors
 

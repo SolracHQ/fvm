@@ -1,45 +1,23 @@
-## Assembler public facade
-##
-## Composes the three assembler pipeline stages into a single easy entry point:
-##   tokenizeAssembly -> parseTokens -> emitBytecode -> FvmObject
-##
-## The assembler produces an FvmObject (with the FVM header) rather than a raw
-## byte sequence.  The VM's `initRom` consumes an FvmObject directly.
+import ./lexer
+import ./parser
+import ./mapper
+import ./resolver
+import ./emitter
+import ../types/core
+import ../format/fvmobject
 
 import std/logging
 
-import ../types/core
-import ../types/errors
-import ../format/fvmobject
-import ./lexer
-import ./parser
-import ./emitter
 
-export fvmobject ## re-export so importers see FvmObject without extra imports
-
-proc assembleSource*(
-    source: string, entryPoint: Address = 0'u16
-): FvmResult[FvmObject] =
-  ## Assembles a string of Fantasy Assembly source code.
-  ## When entryPoint is zero (the default) the initial IP is set to the start
-  ## of the .code section, which follows any .rodata bytes.
-  let tokens = (?tokenizeAssembly(source))
-  let output = (?parseTokens(tokens))
-  let emitResult = (?emitBytecodeWithRelocations(output.instructions))
-  let ep =
-    if entryPoint == 0:
-      Address(output.rodata.len)
-    else:
-      entryPoint
-
-  FvmObject(
-    version: FvmVersion,
-    entryPoint: ep,
-    rodata: output.rodata,
-    code: emitResult.code,
-    data: output.data,
-    relocations: emitResult.relocations,
-  ).ok
+proc assembleSource*(source: string): FvmResult[FvmObject] =
+  var lexer = newLexer(source)
+  let tokens  = ?lexer.tokenize()
+  var parser = newParser(tokens)
+  let nodes   = ?parser.parse()
+  let srcMap  = ?map(nodes)
+  var resolver = newResolver()
+  let program = ?resolver.resolve(nodes, srcMap)
+  return emit(program, srcMap.sizes)
 
 proc assembleFile*(path: string, entryPoint: Address = 0'u16): FvmResult[FvmObject] =
   ## Reads a `.fa` source file from disk and assembles it.
@@ -49,4 +27,4 @@ proc assembleFile*(path: string, entryPoint: Address = 0'u16): FvmResult[FvmObje
       readFile(path)
     except CatchableError as e:
       return ("Failed to read assembly file '" & path & "': " & e.msg).err
-  assembleSource(source, entryPoint)
+  assembleSource(source)

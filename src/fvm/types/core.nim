@@ -1,10 +1,21 @@
 ## Core primitive type aliases and VM-wide constants.
 
+import results
+
+export results
+
 type
+
+  FvmResult*[T] = Result[T, string]
+
   Byte* = uint8
+    ## The basic unit of memory and I/O in the FVM. Instructions are byte-aligned and may be 1-3 bytes long.
   Word* = uint16
-  Address* = uint16
+    ## This VM is 16 bits addresses so to keep convention I will call it word
+  Address* = Word
+    ## Memory addresses are 16 bits, addressing a flat 64 KB address space.
   RegEncoding* = distinct Byte
+    ## Register operand encoding: one byte per register operand, with bits to indicate lane and high/low byte access.
 
   Permission* = enum
     Read ## region may be read by data loads and opcode fetch
@@ -45,7 +56,24 @@ const
 
 # RegEncoding predicates
 
+proc newRegEncoding*(index: int, lane: bool = false, high: bool = false, isSp: bool = false): FvmResult[RegEncoding] =
+  if isSp:
+    if lane or high:
+      return "SP encoding cannot specify lane or high byte".err
+    else:
+      return SpEncoding.ok
+  else:
+    if index < 0 or index >= GeneralRegisterCount:
+      return ("Register index out of range: " & $index).err
+    var encoding = RegEncoding(Byte(index) and RegIndexMask)
+    if lane:
+      encoding = RegEncoding(Byte(encoding) or RegLaneBit)
+    if high:
+      encoding = RegEncoding(Byte(encoding) or RegHighBit)
+    return encoding.ok
+
 proc `==`*(a, b: RegEncoding): bool {.borrow.}
+
 proc isSp*(r: RegEncoding): bool =
   (Byte(r) and (RegLaneBit or RegHighBit)) == RegHighBit
 

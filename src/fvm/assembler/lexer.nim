@@ -1,364 +1,230 @@
-## Fantasy Assembly Lexer
-##
-## Converts raw source text into a flat sequence of AsmTokens.
+import ../types/core
 
 import std/strutils
 
-import ../types/core
-import ../types/errors
-
-export errors ## re-export so importers can use FvmResult and results procs directly
-
 type
   TokenKind* = enum
-    TkMnemonic
-    TkRegister
-    TkImmediate
-    TkStringLit ## string literal in double quotes, used by db
-    TkComma
-    TkEol
-    TkLabel ## label definition: identifier followed by ':'
+    tkIdent       # [a-zA-Z_][a-zA-Z0-9_]*
+    tkDot         # .
+    tkColon       # :
+    tkComma       # ,
+    tkNewline     # significant: terminates an instruction
+    tkNumber      # any numeric literal, stored as raw string for now
+    tkString      # "..." content (escape-processed)
+    tkChar        # 'x' ascii character literal
+    tkEof
 
-  AsmToken* = object
-    line*: int
-    column*: int
+  Token* = object
+    line*: uint16
+    col*: uint16
     case kind*: TokenKind
-    of TkMnemonic:
-      mnemonic*: string
-    of TkRegister:
-      regEncoding*: RegEncoding
-        ## full operand byte: lane bits (7:6) + reserved (5:4) + index (3:0)
-      regSource*: string ## original text; used in error messages
-    of TkImmediate:
-      immValue*: int
-    of TkStringLit:
-      strValue*: string
-    of TkLabel:
-      labelName*: string ## bare name without the colon; local labels start with '.'
-    of TkComma, TkEol:
-      discard
+    of tkIdent:
+      ident*: string
+    of tkNumber:
+      number*: uint16
+    of tkString:
+      str*: seq[Byte]
+    of tkChar:
+      ch*: Byte
+    else: discard
 
   Lexer* = object
-    source*: string
-    current*: int
-    line*: int
-    column*: int
+    input*: string
+    pos*: int
+    line*: uint16
+    col*: uint16
 
-# Lexer state management
+proc newLexer*(input: string): Lexer =
+  Lexer(input: input, pos: 0, line: 1, col: 1)
 
-proc isAtEnd(lexer: Lexer): bool =
-  lexer.current >= lexer.source.len
 
-proc peek(lexer: Lexer): char =
-  if lexer.isAtEnd:
+# lexer lookup and movement utilities
+
+proc peek(self: Lexer, offset: int = 0): char =
+  if self.pos + offset >= self.input.len:
     '\0'
   else:
-    lexer.source[lexer.current]
+    self.input[self.pos + offset]
 
-proc peekNext(lexer: Lexer): char =
-  if lexer.current + 1 >= lexer.source.len:
-    '\0'
-  else:
-    lexer.source[lexer.current + 1]
+proc check(self: Lexer, expected: char, offset: int = 0): bool =
+  self.peek(offset) == expected
 
-proc advance(lexer: var Lexer): char =
-  result = lexer.peek()
+proc advance(self: var Lexer): char =
+  result = self.peek()
   if result == '\n':
-    inc lexer.line
-    lexer.column = 0
+    self.line += 1
+    self.col = 1
   else:
-    inc lexer.column
-  inc lexer.current
+    self.col += 1
+  self.pos += 1
 
-proc skipWhitespace(lexer: var Lexer) =
-  while not lexer.isAtEnd:
-    let ch = lexer.peek()
-    case ch
-    of ' ', '\t', '\r':
-      discard lexer.advance()
+proc skipWhitespace(self: var Lexer) =
+  while true:
+    let ch = self.peek()
+    if ch in {' ', '\t', '\r'}:
+      discard self.advance()
+    elif ch == '#':
+      while self.peek() != '\n' and self.peek() != '\0':
+        discard self.advance()
     else:
       break
 
-proc skipComment(lexer: var Lexer) =
-  ## Skips a comment starting with '#' until end of line.
-  if lexer.peek() == '#':
-    while not lexer.isAtEnd and lexer.peek() != '\n':
-      discard lexer.advance()
+# Numeric utilities for lexing numbers in various formats
+template isHexDigit(ch: char): bool =
+  ch in {'0'..'9', 'a'..'f', 'A'..'F'}
 
-# Token parsing
+template isDigit(ch: char): bool =
+  ch in {'0'..'9'}
 
-proc parseIdentifier(lexer: var Lexer): string =
-  ## Reads an identifier or keyword (starts with letter or underscore).
+template isOctDigit(ch: char): bool =
+  ch in {'0'..'7'}
+
+proc parseAnCheck(s: string, parser: proc(s:string): int, baseName: string): FvmResult[uint16] =
+  try:
+    let val = parser(s)
+    if val < 0 or val > 0xFFFF:
+      return ($baseName & " number out of range (must fit in 16 bits): " & s).err
+    return uint16(val).ok
+  except ValueError as e:
+    return ("Invalid " & baseName & " number: " & e.msg).err
+
+proc lexHexNumber(self: var Lexer): FvmResult[uint16] =
+  ## Lex a hexadecimal number, starting after "0x" or "0X"
+  var number = ""
+  while isHexDigit(self.peek()):
+    number.add(self.advance())
+  if number.len == 0:
+    return "Expected hex digits after 0x".err
+  parseAnCheck(number, fromHex[int], "Hex")
+
+proc lexDecNumber(self: var Lexer): FvmResult[uint16] =
+  ## Lex a decimal number
+  var number = ""
+  while isDigit(self.peek()):
+    number.add(self.advance())
+  if number.len == 0:
+    return "Expected decimal digits".err
+  parseAnCheck(number, parseInt, "Decimal")
+
+proc lexOctNumber(self: var Lexer): FvmResult[uint16] =
+  ## Lex an octal number, starting after "0o" or "0O"
+  var number = ""
+  while isOctDigit(self.peek()):
+    number.add(self.advance())
+  if number.len == 0:
+    return "Expected octal digits after 0o".err
+  parseAnCheck(number, fromOct[int], "Octal")
+
+# Identifier utilities
+template isIdentStart(ch: char): bool =
+  ch in {'a'..'z', 'A'..'Z', '_'}
+
+template isIdentPart(ch: char): bool =
+  isIdentStart(ch) or isDigit(ch)
+
+proc lexIdentifier(self: var Lexer): string =
   var ident = ""
-  while not lexer.isAtEnd and lexer.peek() in {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '_'}:
-    ident.add(lexer.advance())
+  while isIdentPart(self.peek()):
+    ident.add(self.advance())
   ident
 
-proc parseNumber(lexer: var Lexer): FvmResult[int] =
-  ## Parses decimal, hex (0x), or octal (0o) immediate.
-  var numStr = ""
+proc escapeChar(self: var Lexer): FvmResult[Byte] =
+  ## Utility to handle next char after a backslash in string/char literals
+  let ch = self.advance()
+  case ch
+  of 'n': Byte(ord '\n').ok
+  of 't': Byte(ord '\t').ok
+  of 'r': Byte(ord '\r').ok
+  of '\\': Byte(ord '\\').ok
+  of '"': Byte(ord '"').ok
+  of '\'': Byte(ord '\'').ok
+  of '0': Byte(0).ok
+  else: ("Invalid escape sequence: \\" & $ch).err
 
-  # Check for hex or octal prefix
-  if lexer.peek() == '0' and not lexer.isAtEnd:
-    numStr.add(lexer.advance())
-    if not lexer.isAtEnd:
-      let next = lexer.peek()
-      if next == 'x' or next == 'X':
-        numStr.add(lexer.advance())
-        # Read hex digits
-        while not lexer.isAtEnd and lexer.peek() in {'0' .. '9', 'a' .. 'f', 'A' .. 'F'}:
-          numStr.add(lexer.advance())
-        if numStr.len < 3:
-          return ("Invalid hex immediate: " & numStr).err
-        try:
-          return parseHexInt(numStr[2 .. ^1]).ok
-        except ValueError:
-          return ("Invalid hex immediate: " & numStr).err
-      elif next == 'o' or next == 'O':
-        numStr.add(lexer.advance())
-        # Read octal digits
-        while not lexer.isAtEnd and lexer.peek() in {'0' .. '7'}:
-          numStr.add(lexer.advance())
-        if numStr.len < 3:
-          return ("Invalid octal immediate: " & numStr).err
-        try:
-          return parseOctInt(numStr[2 .. ^1]).ok
-        except ValueError:
-          return ("Invalid octal immediate: " & numStr).err
-
-  # Parse remaining decimal digits
-  while not lexer.isAtEnd and lexer.peek() in {'0' .. '9'}:
-    numStr.add(lexer.advance())
-
-  if numStr.len == 0:
-    return ("Empty immediate").err
-
-  try:
-    return parseInt(numStr).ok
-  except ValueError:
-    ("Invalid immediate: " & numStr).err
-
-proc parseRegisterToken(regText: string, line: int, column: int): FvmResult[AsmToken] =
-  let lower = regText.toLowerAscii()
-
-  if lower.len >= 2 and lower[0] == 'r':
-    var indexText = lower[1 .. ^1]
-    var laneBits = 0'u8
-
-    # Strip byte-lane suffix: l = low byte, h = high byte
-    if indexText.endsWith("l"):
-      laneBits = RegLaneBit
-      indexText = indexText[0 .. ^2]
-    elif indexText.endsWith("h"):
-      laneBits = RegLaneBit or RegHighBit
-      indexText = indexText[0 .. ^2]
-
-    try:
-      let idx = parseInt(indexText)
-      if idx < 0 or idx >= GeneralRegisterCount:
-        return ("Register out of range: " & regText).err
-      return
-        AsmToken(
-          line: line,
-          column: column,
-          kind: TkRegister,
-          regEncoding: RegEncoding(laneBits or Byte(idx)),
-          regSource: lower,
-        ).ok
-    except ValueError:
-      discard
-
-  ("Invalid register: " & regText).err
-
-proc parseImmediateToken(immValue: int, line: int, column: int): AsmToken =
-  AsmToken(line: line, column: column, kind: TkImmediate, immValue: immValue)
-
-# Main tokenization
-
-proc tokenizeAssembly*(source: string): FvmResult[seq[AsmToken]] =
-  var lexer = Lexer(source: source, current: 0, line: 1, column: 0)
-  var tokens: seq[AsmToken]
-
-  while not lexer.isAtEnd:
-    lexer.skipWhitespace()
-
-    let startLine = lexer.line
-    let startColumn = lexer.column
-
-    if lexer.isAtEnd:
+proc lexString(self: var Lexer): FvmResult[seq[Byte]] =
+  ## Lex a string literal, starting after the opening quote
+  var str = newSeq[Byte]()
+  while true:
+    let ch = self.peek()
+    if ch == '\0':
+      return "Unterminated string literal".err
+    elif ch == '"':
+      discard self.advance() # consume closing quote
       break
+    elif ch == '\\':
+      discard self.advance() # consume backslash
+      let esc = ?self.escapeChar()
+      str.add(esc)
+    else:
+      str.add(Byte(ord self.advance()))
+  result = str.ok
 
-    let ch = lexer.peek()
+proc lexChar(self: var Lexer): FvmResult[Byte] =
+  ## Lex a character literal, starting after the opening single quote
+  let ch = self.peek()
+  if ch == '\0':
+    return "Unterminated character literal".err
+  elif ch == '\\':
+    discard self.advance() # consume backslash
+    result = ok ?self.escapeChar()
+  else:
+    result = ok Byte ord self.advance()
+  if self.peek() != '\'':
+    return "Expected closing single quote for character literal".err
+  discard self.advance() # consume closing quote
 
-    # Handle end of line (implicit token)
-    if ch == '\n':
-      discard lexer.advance()
-      tokens.add(AsmToken(line: startLine, column: startColumn, kind: TkEol))
-      continue
+proc lexNumber(self: var Lexer): FvmResult[uint16] =
+  ## Lex a number, which can be in hex (0x), octal (0o), or decimal
+  if self.check('0'):
+    if self.check('x', 1) or self.check('X', 1):
+      discard self.advance() # consume '0'
+      discard self.advance() # consume 'x' or 'X'
+      return self.lexHexNumber()
+    elif self.check('o', 1) or self.check('O', 1):
+      discard self.advance() # consume '0'
+      discard self.advance() # consume 'o' or 'O'
+      return self.lexOctNumber()
+  return self.lexDecNumber()
 
-    # Handle comments (skip to end of line)
-    if ch == '#':
-      lexer.skipComment()
-      continue
+proc nextToken(self: var Lexer): FvmResult[Token] =
+  self.skipWhitespace()
+  let startLine = self.line
+  let startCol = self.col
+  case self.peek()
+  of '\0':
+    Token(line: startLine, col: startCol, kind: tkEof).ok
+  of '.':
+    discard self.advance()
+    Token(line: startLine, col: startCol, kind: tkDot).ok
+  of ':':
+    discard self.advance()
+    Token(line: startLine, col: startCol, kind: tkColon).ok
+  of ',':
+    discard self.advance()
+    Token(line: startLine, col: startCol, kind: tkComma).ok
+  of '\n':
+    discard self.advance()
+    Token(line: startLine, col: startCol, kind: tkNewline).ok
+  of '"':
+    discard self.advance() # consume opening quote
+    Token(line: startLine, col: startCol, kind: tkString, str: ?self.lexString()).ok
+  of '\'':
+    discard self.advance() # consume opening single quote
+    Token(line: startLine, col: startCol, kind: tkChar, ch: ?self.lexChar()).ok
+  of '0'..'9':
+    Token(line: startLine, col: startCol, kind: tkNumber, number: ?self.lexNumber()).ok
+  of 'a'..'z', 'A'..'Z', '_':
+    let ident = self.lexIdentifier()
+    Token(line: startLine, col: startCol, kind: tkIdent, ident: ident).ok
+  else:
+    let ch = self.advance()
+    ("Unexpected character: " & $ch).err
 
-    # Handle comma
-    if ch == ',':
-      discard lexer.advance()
-      tokens.add(AsmToken(line: startLine, column: startColumn, kind: TkComma))
-      continue
-
-    # Handle number (immediate)
-    if ch in {'0' .. '9'}:
-      let immResult = lexer.parseNumber()
-      if immResult.isErr:
-        return immResult.error.err
-      tokens.add(parseImmediateToken(immResult.get(), startLine, startColumn))
-      continue
-
-    # Handle character literal: 'X' or escape sequences '\n', '\t', '\0', '\''
-    if ch == '\'':
-      discard lexer.advance()
-      if lexer.isAtEnd:
-        return ("Unterminated character literal at line " & $startLine).err
-      let inner = lexer.advance()
-      let charVal =
-        if inner == '\\':
-          if lexer.isAtEnd:
-            return
-              ("Unterminated escape in character literal at line " & $startLine).err
-          let esc = lexer.advance()
-          case esc
-          of 'n':
-            int('\n')
-          of 't':
-            int('\t')
-          of '0':
-            0
-          of '\\':
-            int('\\')
-          of '\'':
-            int('\'')
-          else:
-            return
-              ("Unknown escape sequence '\\" & $esc & "' at line " & $startLine).err
-        else:
-          int(inner)
-      if lexer.isAtEnd or lexer.peek() != '\'':
-        return
-          ("Expected closing \"'\" for character literal at line " & $startLine).err
-      discard lexer.advance()
-      tokens.add(parseImmediateToken(charVal, startLine, startColumn))
-      continue
-
-    # Handle string literal: "..."
-    if ch == '"':
-      discard lexer.advance()
-      var str = ""
-      while not lexer.isAtEnd and lexer.peek() != '"':
-        let sc = lexer.advance()
-        if sc == '\n':
-          return ("Unterminated string literal at line " & $startLine).err
-        if sc == '\\':
-          if lexer.isAtEnd:
-            return ("Unterminated escape in string literal at line " & $startLine).err
-          let esc = lexer.advance()
-          case esc
-          of 'n':
-            str.add('\n')
-          of 't':
-            str.add('\t')
-          of '0':
-            str.add('\0')
-          of '\\':
-            str.add('\\')
-          of '"':
-            str.add('"')
-          else:
-            return (
-              "Unknown escape '\\" & $esc & "' in string literal at line " & $startLine
-            ).err
-        else:
-          str.add(sc)
-      if lexer.isAtEnd:
-        return ("Unterminated string literal at line " & $startLine).err
-      discard lexer.advance() # closing '"'
-      tokens.add(
-        AsmToken(line: startLine, column: startColumn, kind: TkStringLit, strValue: str)
-      )
-      continue
-
-    # Handle dot-prefixed local label definition or local label reference
-    if ch == '.':
-      discard lexer.advance()
-      let ident = lexer.parseIdentifier()
-      if ident.len == 0:
-        return ("Empty identifier after '.' at line " & $startLine).err
-      let name = "." & ident
-      if lexer.peek() == ':':
-        discard lexer.advance()
-        tokens.add(
-          AsmToken(line: startLine, column: startColumn, kind: TkLabel, labelName: name)
-        )
-      else:
-        # Local label reference used as a jump operand
-        tokens.add(
-          AsmToken(
-            line: startLine, column: startColumn, kind: TkMnemonic, mnemonic: name
-          )
-        )
-      continue
-
-    # Handle identifier (mnemonic, register, or label definition)
-    if ch in {'a' .. 'z', 'A' .. 'Z', '_'}:
-      let ident = lexer.parseIdentifier()
-      let lower = ident.toLowerAscii()
-
-      # Label definition: identifier followed by ':'
-      if lexer.peek() == ':':
-        discard lexer.advance()
-        tokens.add(
-          AsmToken(
-            line: startLine, column: startColumn, kind: TkLabel, labelName: ident
-          )
-        )
-        continue
-
-      # SP register
-      if lower == "sp":
-        tokens.add(
-          AsmToken(
-            line: startLine,
-            column: startColumn,
-            kind: TkRegister,
-            regEncoding: SpEncoding,
-            regSource: "sp",
-          )
-        )
-        continue
-
-      # Try to parse as register: must be 'r' followed immediately by a digit
-      if lower.len >= 2 and lower[0] == 'r' and lower[1] in {'0' .. '9'}:
-        let regResult = parseRegisterToken(ident, startLine, startColumn)
-        if regResult.isErr:
-          return regResult.error.err
-        tokens.add(regResult.get())
-      else:
-        # Treat as mnemonic
-        tokens.add(
-          AsmToken(
-            line: startLine, column: startColumn, kind: TkMnemonic, mnemonic: ident
-          )
-        )
-      continue
-
-    # Unknown character
-    return (
-      "Unexpected character '" & ch & "' at line " & $startLine & ", column " &
-      $startColumn
-    ).err
-
-  # Add final EOL if not already at end with EOL
-  if tokens.len == 0 or tokens[^1].kind != TkEol:
-    tokens.add(AsmToken(line: lexer.line, column: lexer.column, kind: TkEol))
-
+proc tokenize*(self: var Lexer): FvmResult[seq[Token]] =
+  var tokens: seq[Token]
+  while true:
+    let tok = ?self.nextToken()
+    tokens.add(tok)
+    if tok.kind == tkEof:
+      break
   tokens.ok

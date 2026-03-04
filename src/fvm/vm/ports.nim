@@ -11,7 +11,6 @@
 ##   ?vm.registerPort(0, dev)  # attach to port 0
 
 import ../types/core
-import ../types/errors
 
 type
   PortRead* = proc(): FvmResult[Byte] {.closure.}
