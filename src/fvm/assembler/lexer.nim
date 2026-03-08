@@ -1,17 +1,17 @@
-import ../types/core
+import ../core/types
 
 import std/strutils
 
 type
   TokenKind* = enum
-    tkIdent       # [a-zA-Z_][a-zA-Z0-9_]*
-    tkDot         # .
-    tkColon       # :
-    tkComma       # ,
-    tkNewline     # significant: terminates an instruction
-    tkNumber      # any numeric literal, stored as raw string for now
-    tkString      # "..." content (escape-processed)
-    tkChar        # 'x' ascii character literal
+    tkIdent # [a-zA-Z_][a-zA-Z0-9_]*
+    tkDot # .
+    tkColon # :
+    tkComma # ,
+    tkNewline # significant: terminates an instruction
+    tkNumber # any numeric literal, stored as raw string for now
+    tkString # "..." content (escape-processed)
+    tkChar # 'x' ascii character literal
     tkEof
 
   Token* = object
@@ -26,7 +26,8 @@ type
       str*: seq[Byte]
     of tkChar:
       ch*: Byte
-    else: discard
+    else:
+      discard
 
   Lexer* = object
     input*: string
@@ -36,7 +37,6 @@ type
 
 proc newLexer*(input: string): Lexer =
   Lexer(input: input, pos: 0, line: 1, col: 1)
-
 
 # lexer lookup and movement utilities
 
@@ -71,15 +71,17 @@ proc skipWhitespace(self: var Lexer) =
 
 # Numeric utilities for lexing numbers in various formats
 template isHexDigit(ch: char): bool =
-  ch in {'0'..'9', 'a'..'f', 'A'..'F'}
+  ch in {'0' .. '9', 'a' .. 'f', 'A' .. 'F'}
 
 template isDigit(ch: char): bool =
-  ch in {'0'..'9'}
+  ch in {'0' .. '9'}
 
 template isOctDigit(ch: char): bool =
-  ch in {'0'..'7'}
+  ch in {'0' .. '7'}
 
-proc parseAnCheck(s: string, parser: proc(s:string): int, baseName: string): FvmResult[uint16] =
+proc parseAnCheck(
+    s: string, parser: proc(s: string): int, baseName: string
+): FvmResult[uint16] =
   try:
     let val = parser(s)
     if val < 0 or val > 0xFFFF:
@@ -117,7 +119,7 @@ proc lexOctNumber(self: var Lexer): FvmResult[uint16] =
 
 # Identifier utilities
 template isIdentStart(ch: char): bool =
-  ch in {'a'..'z', 'A'..'Z', '_'}
+  ch in {'a' .. 'z', 'A' .. 'Z', '_'}
 
 template isIdentPart(ch: char): bool =
   isIdentStart(ch) or isDigit(ch)
@@ -132,14 +134,22 @@ proc escapeChar(self: var Lexer): FvmResult[Byte] =
   ## Utility to handle next char after a backslash in string/char literals
   let ch = self.advance()
   case ch
-  of 'n': Byte(ord '\n').ok
-  of 't': Byte(ord '\t').ok
-  of 'r': Byte(ord '\r').ok
-  of '\\': Byte(ord '\\').ok
-  of '"': Byte(ord '"').ok
-  of '\'': Byte(ord '\'').ok
-  of '0': Byte(0).ok
-  else: ("Invalid escape sequence: \\" & $ch).err
+  of 'n':
+    Byte(ord '\n').ok
+  of 't':
+    Byte(ord '\t').ok
+  of 'r':
+    Byte(ord '\r').ok
+  of '\\':
+    Byte(ord '\\').ok
+  of '"':
+    Byte(ord '"').ok
+  of '\'':
+    Byte(ord '\'').ok
+  of '0':
+    Byte(0).ok
+  else:
+    ("Invalid escape sequence: \\" & $ch).err
 
 proc lexString(self: var Lexer): FvmResult[seq[Byte]] =
   ## Lex a string literal, starting after the opening quote
@@ -211,9 +221,9 @@ proc nextToken(self: var Lexer): FvmResult[Token] =
   of '\'':
     discard self.advance() # consume opening single quote
     Token(line: startLine, col: startCol, kind: tkChar, ch: ?self.lexChar()).ok
-  of '0'..'9':
+  of '0' .. '9':
     Token(line: startLine, col: startCol, kind: tkNumber, number: ?self.lexNumber()).ok
-  of 'a'..'z', 'A'..'Z', '_':
+  of 'a' .. 'z', 'A' .. 'Z', '_':
     let ident = self.lexIdentifier()
     Token(line: startLine, col: startCol, kind: tkIdent, ident: ident).ok
   else:

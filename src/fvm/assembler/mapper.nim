@@ -1,5 +1,7 @@
 import ./parser
-import ../types/core
+import ../core/types
+import ../core/constants
+import ../core/registers
 
 import std/tables
 
@@ -32,10 +34,12 @@ proc qualifyLabel*(raw: string, currentGlobal: string): string =
 proc hasImm16Arg*(args: seq[Arg]): bool =
   # Label references always resolve to a 16-bit address.
   for a in args:
-    if a.kind == akLabelRef: return true
+    if a.kind == akLabelRef:
+      return true
   # A numeric immediate wider than 8 bits must be imm16.
   for a in args:
-    if a.kind == akImm and a.imm.value > 0xFF: return true
+    if a.kind == akImm and a.imm.value > 0xFF:
+      return true
   # A full-width register destination forces the immediate to 16 bits because
   # the VM reads immediate width from the destination lane bit, not the value.
   if args.len == 2 and args[0].kind == akReg and not args[0].reg.enc.isLane:
@@ -56,19 +60,23 @@ const instrSizes* = block:
     t[SizeKey(mnemonic: m, argCount: 1, hasImm16: false)] = 2
   for m in ["JMP", "JZ", "JNZ", "JC", "JN", "CALL"]:
     t[SizeKey(mnemonic: m, argCount: 1, hasImm16: false)] = 2
-    t[SizeKey(mnemonic: m, argCount: 1, hasImm16: true)]  = 3
-  for m in ["MOV", "ZEXT", "SEXT", "ADD", "SUB", "AND", "OR", "XOR",
-            "CMP", "LOAD", "STORE", "IN", "OUT"]:
+    t[SizeKey(mnemonic: m, argCount: 1, hasImm16: true)] = 3
+  for m in [
+    "MOV", "ZEXT", "SEXT", "ADD", "SUB", "AND", "OR", "XOR", "CMP", "LOAD", "STORE",
+    "IN", "OUT",
+  ]:
     t[SizeKey(mnemonic: m, argCount: 2, hasImm16: false)] = 3
-    t[SizeKey(mnemonic: m, argCount: 2, hasImm16: true)]  = 4
+    t[SizeKey(mnemonic: m, argCount: 2, hasImm16: true)] = 4
   t
 
 proc estimateSize*(mnemonic: string, args: seq[Arg]): FvmResult[int] =
   let key = SizeKey(mnemonic: mnemonic, argCount: args.len, hasImm16: hasImm16Arg(args))
   if key in instrSizes:
     return instrSizes[key].ok
-  ("Unknown instruction or operand combination: " & mnemonic &
-   " with " & $args.len & " argument(s)").err
+  (
+    "Unknown instruction or operand combination: " & mnemonic & " with " & $args.len &
+    " argument(s)"
+  ).err
 
 proc dbByteCount(items: seq[DbItem]): uint16 =
   for item in items:
@@ -85,42 +93,42 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
     case node.kind
     of nkSection:
       section = node.section
-
     of nkLabel:
       discard
-
     of nkInstruction:
       if section != secCode:
-        return ("Instruction outside .code section at line " &
-                $node.line & ":" & $node.col).err
+        return (
+          "Instruction outside .code section at line " & $node.line & ":" & $node.col
+        ).err
       codeSize += uint16(?estimateSize(node.mnemonic, node.args))
-
     of nkDb:
       case section
-      of secRoData: rodataSize += dbByteCount(node.dbItems)
-      of secData:   dataSize   += dbByteCount(node.dbItems)
+      of secRoData:
+        rodataSize += dbByteCount(node.dbItems)
+      of secData:
+        dataSize += dbByteCount(node.dbItems)
       of secCode:
-        return ("db directive in .code section at line " &
-                $node.line & ":" & $node.col).err
-
+        return
+          ("db directive in .code section at line " & $node.line & ":" & $node.col).err
     of nkDw:
       let byteCount = uint16(node.dwItems.len * 2)
       case section
-      of secRoData: rodataSize += byteCount
-      of secData:   dataSize   += byteCount
+      of secRoData:
+        rodataSize += byteCount
+      of secData:
+        dataSize += byteCount
       of secCode:
-        return ("dw directive in .code section at line " &
-                $node.line & ":" & $node.col).err
+        return
+          ("dw directive in .code section at line " & $node.line & ":" & $node.col).err
 
   # Section bases derived from pass 1 sizes.
   let rodataBase: uint16 = 0
-  let codeBase            = rodataSize
-  let dataBase            = rodataSize + codeSize
+  let codeBase = rodataSize
+  let dataBase = rodataSize + codeSize
 
   # Pass 2: record absolute label addresses using the now-known section bases.
-  var srcMap = SourceMap(
-    sizes: SectionSizes(rodata: rodataSize, code: codeSize, data: dataSize)
-  )
+  var srcMap =
+    SourceMap(sizes: SectionSizes(rodata: rodataSize, code: codeSize, data: dataSize))
   var currentGlobal = ""
   var rodataOff, codeOff, dataOff: uint16
   section = secCode
@@ -129,35 +137,41 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
     case node.kind
     of nkSection:
       section = node.section
-
     of nkLabel:
       let name = qualifyLabel(node.name, currentGlobal)
       if node.name[0] != '.':
         currentGlobal = node.name
-      let absAddr = case section
-        of secRoData: rodataBase + rodataOff
-        of secCode:   codeBase   + codeOff
-        of secData:   dataBase   + dataOff
+      let absAddr =
+        case section
+        of secRoData:
+          rodataBase + rodataOff
+        of secCode:
+          codeBase + codeOff
+        of secData:
+          dataBase + dataOff
       if name in srcMap.labels:
-        return ("Duplicate label: " & name &
-                " at line " & $node.line & ":" & $node.col).err
+        return
+          ("Duplicate label: " & name & " at line " & $node.line & ":" & $node.col).err
       srcMap.labels[name] = absAddr
-
     of nkInstruction:
       codeOff += uint16(?estimateSize(node.mnemonic, node.args))
-
     of nkDb:
       let byteCount = dbByteCount(node.dbItems)
       case section
-      of secRoData: rodataOff += byteCount
-      of secData:   dataOff   += byteCount
-      of secCode:   discard
-
+      of secRoData:
+        rodataOff += byteCount
+      of secData:
+        dataOff += byteCount
+      of secCode:
+        discard
     of nkDw:
       let byteCount = uint16(node.dwItems.len * 2)
       case section
-      of secRoData: rodataOff += byteCount
-      of secData:   dataOff   += byteCount
-      of secCode:   discard
+      of secRoData:
+        rodataOff += byteCount
+      of secData:
+        dataOff += byteCount
+      of secCode:
+        discard
 
   srcMap.ok

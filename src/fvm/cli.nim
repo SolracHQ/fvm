@@ -3,10 +3,10 @@
 import std/os
 
 import ./assembler/assembler
+import ./cli/portmap
 import ./format/fvmobject
-import ./vm/core
+import ./vm/vm
 import ./vm/debug as vmdbg
-import ./vm/portmap
 import ./logger
 
 # Shared helpers

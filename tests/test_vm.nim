@@ -7,9 +7,10 @@
 ## the VM tests independent from the assembler subsystem.
 
 import unittest
-import fvm/vm/core
+import fvm/vm/vm
 import fvm/vm/ports
 import fvm/format/fvmobject as fmtobject
+import fvm/core/constants
 
 proc makeObj(code: seq[Byte]): FvmObject =
   FvmObject(version: FvmVersion, entryPoint: 0'u16, code: code)

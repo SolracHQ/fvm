@@ -10,20 +10,9 @@
 ##   )
 ##   ?vm.registerPort(0, dev)  # attach to port 0
 
-import ../types/core
+import ./types
 
-type
-  PortRead* = proc(): FvmResult[Byte] {.closure.}
-  PortWrite* = proc(value: Byte): FvmResult[void] {.closure.}
-
-  PortDevice* = object
-    read*: PortRead
-    write*: PortWrite
-    label*: string
-
-  Ports* = object
-    devices*: array[MaxPortCount, PortDevice]
-    mapped*: array[MaxPortCount, bool] ## true if a device is registered
+export types
 
 proc registerPort*(ports: var Ports, port: Byte, device: PortDevice): FvmResult[void] =
   if ports.mapped[int(port)]:

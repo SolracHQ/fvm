@@ -69,7 +69,5 @@ fib:
   POP r1              # discard fib(n-1) slot
   POP r1              # discard n slot
 
-  RET
-
 .base:
   RET

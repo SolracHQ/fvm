@@ -2,7 +2,8 @@
 
 import unittest
 import fvm/vm/bus
-import fvm/types/core
+import fvm/core/types
+import fvm/core/constants
 
 suite "Bus - region mapping":
   test "single RAM region: read/write round-trip":

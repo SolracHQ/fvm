@@ -3,20 +3,18 @@ import ./parser
 import ./mapper
 import ./resolver
 import ./emitter
-import ../types/core
+import ../core/types
 import ../format/fvmobject
 
 import std/logging
 
-
 proc assembleSource*(source: string): FvmResult[FvmObject] =
   var lexer = newLexer(source)
-  let tokens  = ?lexer.tokenize()
+  let tokens = ?lexer.tokenize()
   var parser = newParser(tokens)
-  let nodes   = ?parser.parse()
-  let srcMap  = ?map(nodes)
-  var resolver = newResolver()
-  let program = ?resolver.resolve(nodes, srcMap)
+  let nodes = ?parser.parse()
+  let srcMap = ?map(nodes)
+  let program = ?resolve(nodes, srcMap)
   return emit(program, srcMap.sizes)
 
 proc assembleFile*(path: string, entryPoint: Address = 0'u16): FvmResult[FvmObject] =

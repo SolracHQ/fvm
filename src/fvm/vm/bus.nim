@@ -19,9 +19,10 @@
 
 import std/strutils
 
-import ../types/core
+import ../core/types as coretypes
+import ../core/constants as coreconst
 
-export core ## Re-export so callers get Permission/Permissions without a separate import
+export coretypes, coreconst ## Re-export shared bus-visible core declarations
 export errors ## Re-export so callers get FvmResult without a separate import
 
 type

@@ -13,11 +13,13 @@
 ##   13+N     M    .code bytes
 ##   13+N+M   P    .data bytes
 ##
-## Total fixed header size = 13 bytes (FvmHeaderSize constant in types/core).
+## Total fixed header size = 13 bytes (FvmHeaderSize constant in core/constants).
 
-import ../types/core
+import ../core/types as coretypes
+import ../core/constants as coreconst
 
-export core ## re-export so importers can use FvmResult and results procs directly
+export
+  coretypes, coreconst ## re-export so importers can use core object primitives directly
 
 const
   FvmMagic*: array[4, Byte] = [0x46'u8, 0x56, 0x4D, 0x21] ## "FVM!"
@@ -39,24 +41,23 @@ proc serialize*(obj: FvmObject): seq[Byte] =
   let codeLen = uint16(obj.code.len)
   let dataLen = uint16(obj.data.len)
   let relocCount = uint16(obj.relocations.len)
-  result =
-    @[
-      FvmMagic[0],
-      FvmMagic[1],
-      FvmMagic[2],
-      FvmMagic[3],
-      FvmVersion,
-      Byte((obj.entryPoint shr 8) and ByteMask),
-      Byte(obj.entryPoint and ByteMask),
-      Byte((rodataLen shr 8) and ByteMask),
-      Byte(rodataLen and ByteMask),
-      Byte((codeLen shr 8) and ByteMask),
-      Byte(codeLen and ByteMask),
-      Byte((dataLen shr 8) and ByteMask),
-      Byte(dataLen and ByteMask),
-      Byte((relocCount shr 8) and ByteMask),
-      Byte(relocCount and ByteMask),
-    ]
+  result = @[
+    FvmMagic[0],
+    FvmMagic[1],
+    FvmMagic[2],
+    FvmMagic[3],
+    FvmVersion,
+    Byte((obj.entryPoint shr 8) and ByteMask),
+    Byte(obj.entryPoint and ByteMask),
+    Byte((rodataLen shr 8) and ByteMask),
+    Byte(rodataLen and ByteMask),
+    Byte((codeLen shr 8) and ByteMask),
+    Byte(codeLen and ByteMask),
+    Byte((dataLen shr 8) and ByteMask),
+    Byte(dataLen and ByteMask),
+    Byte((relocCount shr 8) and ByteMask),
+    Byte(relocCount and ByteMask),
+  ]
   result.add(obj.rodata)
   result.add(obj.code)
   result.add(obj.data)

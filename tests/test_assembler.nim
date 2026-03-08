@@ -1,7 +1,9 @@
 import unittest
 import fvm/assembler/lexer
 import fvm/assembler/parser
-import fvm/types/core
+import fvm/core/types
+import fvm/core/constants
+import fvm/core/registers
 
 # Lexer tests
 

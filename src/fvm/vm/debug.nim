@@ -4,9 +4,10 @@ import std/logging
 import std/strformat
 import std/strutils
 
-import ./core
+import ../core/constants
+import ./vm
 
-export core, logging
+export vm, logging
 
 # Register formatting
 
