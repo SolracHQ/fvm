@@ -1,12 +1,15 @@
 # FVM: Virtual Machine Reference
 
-What the machine actually is right now: registers, memory model, the bus, and the execution loop. For planned extensions see `fvm-vm-design.md`.
+What the machine actually is right now: registers, memory model, privilege,
+interrupt delivery, and the execution loop.
 
 ---
 
 ## Registers
 
-16 general-purpose 16-bit registers, `r0` through `r15`, plus `sp` (stack pointer), also 16-bit. All 17 are first-class operands in MOV, ADD, SUB, and the other ALU instructions.
+16 general-purpose 16-bit registers, `r0` through `r15`, plus `sp` (stack
+pointer), also 16-bit. All 17 are first-class operands in MOV, ADD, SUB, and
+the other ALU instructions.
 
 ### Register encoding
 
@@ -24,7 +27,7 @@ bits 3:0  register index 0-15 (ignored for sp)
 
 Examples: `r5 = 0x05`, `r5l = 0x85`, `r5h = 0xC5`, `sp = 0x40`.
 
-Three flag bits updated by arithmetic and comparison instructions:
+Three flag bits are updated by arithmetic and comparison instructions:
 
 | Flag | Name | Set when |
 |------|------|----------|
@@ -36,7 +39,9 @@ Three flag bits updated by arithmetic and comparison instructions:
 
 ## Memory and the bus
 
-Flat 64 KB address space. All reads and writes go through the bus, which owns the backing byte array and a list of mapped regions. Each region has a base address, a size, a label, and a permissions set.
+Flat 64 KB address space. All reads and writes go through the bus, which owns
+the backing byte array and a list of mapped regions. Each region has a base
+address, a size, a label, and a permissions set.
 
 Permissions:
 
@@ -46,11 +51,14 @@ Permissions:
 | `PermCode` | `{Read, Execute}` | `.code` |
 | `PermRam` | `{Read, Write}` | `.data`, stack |
 
-The bus checks every access against the region list. Writing to a region without `Write` permission returns an error. Fetching an opcode from a region without `Execute` permission returns an error. Accessing an unmapped address returns an error. The VM treats any bus error as a fault and halts.
+The bus checks every access against the region list. Writing to a region
+without `Write` permission returns an error. Fetching an opcode from a region
+without `Execute` permission returns an error. Accessing an unmapped address
+returns an error.
 
-Opcode fetches use `bus.fetch8` which enforces `Execute` permission. Data reads and writes use `bus.read8`/`bus.read16`/`bus.write8`/`bus.write16` which enforce `Read`/`Write`.
-
-Device regions also carry read/write callbacks. When a device region is hit the callbacks fire instead of touching the backing array. This is how peripherals (UART, screen, timers) will be wired in.
+Opcode fetches use `bus.fetch8` which enforces `Execute` permission. Data reads
+and writes use `bus.read8`/`bus.read16`/`bus.write8`/`bus.write16` which enforce
+`Read`/`Write`.
 
 ### Memory layout
 
@@ -62,13 +70,90 @@ dataEnd .. 0xEFFF           unmapped
 0xF000 .. 0xFFFF            RAM  {Read, Write}     stack
 ```
 
-Stack starts at `0xFFFF` and grows downward. SP is initialized to `0xFFFF` on VM creation. If `dataEnd > 0xF000` the loader returns an error.
+Stack starts at `0xFFFF` and grows downward. SP is initialized to `0xFFFF` on
+VM creation. If `dataEnd > 0xF000` the loader returns an error.
+
+---
+
+## Privilege and interrupt state
+
+The interrupt vector table is stored inside `Vm`, not in bus memory. Regular
+`LOAD` and `STORE` cannot reach it.
+
+`Vm` carries these interrupt-related fields:
+
+```nim
+ivt:         array[IvtEntryCount, Address]
+ictx:        InterruptContext
+inInterrupt: bool
+privileged:  bool
+```
+
+`InterruptContext` stores a complete snapshot of the interrupted machine state:
+
+```nim
+InterruptContext = object
+  regs:       array[GeneralRegisterCount, Word]
+  ip:         Address
+  sp:         Address
+  flags:      Flags
+  privileged: bool
+```
+
+`inInterrupt` prevents nesting. If an interrupt fires while a handler is
+already active, the VM drops the new interrupt and continues from the next
+instruction instead of overwriting `ictx`.
+
+`privileged = true` means kernel mode. `privileged = false` means user mode.
+`SIE` and `DPL` are privileged instructions. Executing them in user mode raises
+interrupt 6.
+
+### Interrupt numbers
+
+`IvtEntryCount` is 16.
+
+| Index | Name | Current use |
+|-------|------|-------------|
+| 0 | reserved | reserved for future reset/shutdown flow |
+| 1 | bus fault | unmapped or permission-denied memory access |
+| 2 | invalid opcode | opcode byte outside the defined enum |
+| 3 | stack overflow | push/call would move SP below valid stack space |
+| 4 | stack underflow | pop/ret would read above stack ceiling |
+| 5 | reserved | unused |
+| 6 | privilege fault | privileged instruction executed in user mode |
+| 7-14 | reserved | unused |
+| 15 | software interrupt | conventional syscall/soft interrupt slot |
+
+`INT n` currently accepts any vector index `0..15`, but index 15 is the
+conventional software-interrupt slot.
+
+### Interrupt dispatch
+
+`raiseInterrupt(vm, index)` is the only entry point used by the execution loop
+and instruction handlers.
+
+Dispatch sequence:
+
+1. If `inInterrupt` is true, drop the interrupt and return.
+2. Copy `regs`, `ip`, `sp`, `flags`, and `privileged` into `ictx`.
+3. Set `inInterrupt = true` and `privileged = true`.
+4. Look up `ivt[index]`. If the address is 0, halt the VM.
+5. Set `vm.ip` to the handler address and continue execution.
+
+Resume IP is chosen by the caller before `raiseInterrupt()` runs:
+
+- fetch-time faults save `ip + 1`
+- execute-time faults save `ip + insn.size`
+- `INT` saves the address after the `INT` instruction
+
+`IRET` restores `regs`, `ip`, `sp`, `flags`, and `privileged`, then clears
+`inInterrupt`.
 
 ---
 
 ## Binary format (v2)
 
-What the assembler produces. Big-endian throughout. Header is exactly 13 bytes.
+Big-endian throughout. Header is exactly 15 bytes.
 
 ```
 offset  size  description
@@ -79,61 +164,62 @@ offset  size  description
 7       2     .rodata byte count
 9       2     .code byte count
 11      2     .data byte count
-13      N     .rodata bytes
-13+N    M     .code bytes
-13+N+M  P     .data bytes
+13      2     relocation count
+15      N     .rodata bytes
+15+N    M     .code bytes
+15+N+M  P     .data bytes
+...     2*K   relocation offsets into .code
 ```
 
-`initRom` deserializes the object, maps the three sections as the correct region types using `writeRangeDirect` (bypasses permission checks during initialization), and sets IP to the entry point.
+Relocations identify 16-bit addresses inside `.code` that must be adjusted by
+the loader's section-base shift. With the IVT now outside memory, the current
+loader shift is zero, but the relocation table remains part of the format.
+
+`initRom` deserializes the object, maps the three sections with the correct
+permissions using `writeRangeDirect`, and sets IP to the entry point.
 
 ---
 
 ## Execution loop
 
-`step` calls `bus.fetch8(ip)` to read one opcode byte, decodes it, looks up the handler in the dispatch table, and calls it. The handler is responsible for advancing IP. `run` calls `step` in a loop until `vm.halted` is true or a step returns an error.
+`step` performs fetch, decode, and execute. The handler is responsible for
+advancing IP only when it changes control flow; otherwise `execute` increments
+by the decoded instruction size.
 
-`fetch8` enforces `Execute` permission, so fetching from `.rodata` or `.data` produces a bus error and halts the VM.
+Fault handling in `step` is interrupt-aware:
 
----
+- bus fetch/read/write faults raise interrupt 1
+- invalid opcode bytes raise interrupt 2
+- stack overflow and underflow raise interrupts 3 and 4
+- privileged-instruction misuse raises interrupt 6
 
-## Jump opcodes
-
-All five conditional variants come in two encodings. The assembler selects based on the operand type; the VM does not auto-detect.
-
-| Opcode | Bytes | Condition | Behavior when false |
-|--------|-------|-----------|---------------------|
-| `Jmp` | `op hi lo` | always | - |
-| `JmpReg` | `op enc` | always | - |
-| `Jz` | `op hi lo` | Z set | `ip += 3` |
-| `JzReg` | `op enc` | Z set | `ip += 2` |
-| `Jnz` | `op hi lo` | Z clear | `ip += 3` |
-| `JnzReg` | `op enc` | Z clear | `ip += 2` |
-| `Jc` | `op hi lo` | C set | `ip += 3` |
-| `JcReg` | `op enc` | C set | `ip += 2` |
-| `Jn` | `op hi lo` | N set | `ip += 3` |
-| `JnReg` | `op enc` | N set | `ip += 2` |
-
-The immediate form reads `hi` and `lo` as a big-endian `u16` and overwrites `ip`. The register form reads the full 16-bit value of the register named by `enc`; `sp` (`enc = 0x40`) is a valid operand.
+If the corresponding IVT entry is zero, the VM halts. Otherwise the handler
+runs in privileged mode and returns with `IRET`.
 
 ---
 
-## Memory opcodes
+## Interrupt and privilege opcodes
 
 | Opcode | Bytes | Effect |
 |--------|-------|--------|
-| `Load` | `op dst_enc addr_enc` | load word or byte from address in `addr` into `dst`; width from `dst` encoding |
-| `Store` | `op addr_enc src_enc` | store word or byte from `src` to address in `addr`; width from `src` encoding |
+| `SIE` | `op idx_enc hi lo` | set `ivt[idx] = imm16` |
+| `SIE` | `op idx_enc addr_enc` | set `ivt[idx] = regs[addr]` |
+| `INT` | `op imm8` | raise interrupt `imm8` |
+| `INT` | `op enc` | raise interrupt `regs[enc]` |
+| `IRET` | `op` | restore `ictx` and leave interrupt mode |
+| `DPL` | `op` | drop from privileged to user mode |
 
-`addr` must always be a full 16-bit register. `dst`/`src` can be full or byte-lane; the lane encoding determines whether one or two bytes are transferred.
+Rules:
+
+- `SIE` and `DPL` are privileged.
+- `IRET` outside an active handler raises interrupt 6.
+- `SIE` requires a full-width index register. Index must be `0..15`.
+- `INT` accepts any installed vector index `0..15`.
 
 ---
 
-## Subroutine opcodes
+## Jump, memory, and subroutine opcodes
 
-| Opcode | Bytes | Effect |
-|--------|-------|--------|
-| `Call` | `op hi lo` | push `ip + 3` as `u16`, set `ip = (hi << 8) | lo` |
-| `CallReg` | `op enc` | push `ip + 2` as `u16`, set `ip = regs[enc]` |
-| `Ret` | `op` | pop `u16` from stack, set `ip` to it |
-
-The push uses the same decrement-then-write mechanism as `PUSH`: `sp -= 2`, then write 16-bit big-endian. The pop mirrors `POP`: read 16-bit big-endian, then `sp += 2`. The return address is the byte immediately after the `Call` instruction, so execution resumes correctly after `Ret`.
+The previously documented jump, memory, and subroutine instructions are
+unchanged except for absolute addresses no longer being shifted by a memory-
+mapped IVT region.

@@ -12,6 +12,13 @@ type
   PortWrite* = proc(value: Byte): FvmResult[void] {.closure.}
     ## Writes one byte to a port device.
 
+  InterruptContext* = object
+    regs*: array[GeneralRegisterCount, Word]
+    ip*: Address
+    sp*: Address
+    flags*: Flags
+    privileged*: bool
+
   PortDevice* = object ## Bound read/write behavior for one I/O port.
     read*: PortRead ## Read callback for IN instructions.
     write*: PortWrite ## Write callback for OUT instructions.
@@ -27,6 +34,10 @@ type
     ip*: Address ## Instruction pointer.
     sp*: Address ## Stack pointer.
     flags*: Flags ## Arithmetic and comparison flags.
+    ivt*: array[IvtEntryCount, Address] ## Interrupt handler target addresses.
+    ictx*: InterruptContext ## Saved execution context for the active handler.
+    inInterrupt*: bool ## True while executing an interrupt handler.
+    privileged*: bool ## Current privilege level: true = kernel, false = user.
     halted*: bool ## Halt latch set by HALT.
     ports*: Ports ## Registered I/O ports.
 

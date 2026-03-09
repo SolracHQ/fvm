@@ -7,6 +7,7 @@
 ## the VM tests independent from the assembler subsystem.
 
 import unittest
+import fvm/assembler/assembler
 import fvm/vm/vm
 import fvm/vm/ports
 import fvm/format/fvmobject as fmtobject
@@ -19,6 +20,15 @@ proc freshVm(code: seq[Byte]): Vm =
   var vm = newVm().get()
   vm.initRom(makeObj(code)).get()
   vm
+
+proc freshVm(obj: FvmObject): Vm =
+  var vm = newVm().get()
+  vm.initRom(obj).get()
+  vm
+
+proc bytes(s: string): seq[Byte] =
+  for ch in s:
+    result.add(Byte(ord(ch)))
 
 suite "newVm":
   test "creates a halted=false VM":
@@ -39,8 +49,8 @@ suite "initRom":
     var vm = newVm().get()
     let obj = makeObj(@[Byte(ord(OpCode.Nop)), Byte(ord(OpCode.Halt))])
     vm.initRom(obj).get()
-    check vm.bus.mem[IvtSize] == Byte(ord(OpCode.Nop))
-    check vm.bus.mem[IvtSize + 1] == Byte(ord(OpCode.Halt))
+    check vm.bus.mem[0] == Byte(ord(OpCode.Nop))
+    check vm.bus.mem[1] == Byte(ord(OpCode.Halt))
 
   test "sets ip to entryPoint":
     var vm = newVm().get()
@@ -48,7 +58,7 @@ suite "initRom":
       version: FvmVersion, entryPoint: 0x0010'u16, code: @[Byte(ord(OpCode.Halt))]
     )
     vm.initRom(obj).get()
-    check vm.ip == 0x0010'u16 + IvtSize
+    check vm.ip == 0x0010'u16
 
   test "program too large returns error":
     var vm = newVm().get()
@@ -61,7 +71,7 @@ suite "step - NOP":
   test "NOP advances ip by 1":
     var vm = freshVm(@[Byte(ord(OpCode.Nop)), Byte(ord(OpCode.Halt))])
     vm.step().get()
-    check vm.ip == IvtSize + 1
+    check vm.ip == 1
 
 suite "step - HALT":
   test "HALT sets halted flag":
@@ -139,10 +149,11 @@ suite "run":
     vm.run().get()
     check vm.halted
 
-  test "invalid opcode returns error":
+  test "invalid opcode raises interrupt and halts when unhandled":
     var vm = freshVm(@[0xFF'u8])
-    let res = vm.run()
-    check res.isErr
+    vm.run().get()
+    check vm.halted
+    check vm.ip == 1
 
 # enc byte constants used throughout arithmetic tests
 # r0 = 0x00, r1 = 0x01, r0l = 0x80, r1l = 0x81
@@ -710,7 +721,7 @@ suite "step - CALL / RET":
       @[
         Byte(ord(OpCode.Call)),
         0x00'u8,
-        0x28'u8,
+        0x08'u8,
         Byte(ord(OpCode.MovRegImm)),
         0x01'u8,
         0x00'u8,
@@ -746,11 +757,11 @@ suite "step - CALL / RET":
       @[
         Byte(ord(OpCode.Call)),
         0x00'u8,
-        0x24'u8, # CALL outer (code offset 4)
+        0x04'u8, # CALL outer (code offset 4)
         Byte(ord(OpCode.Halt)),
         Byte(ord(OpCode.Call)),
         0x00'u8,
-        0x2B'u8, # CALL inner (code offset 11)
+        0x0B'u8, # CALL inner (code offset 11)
         Byte(ord(OpCode.MovRegImm)),
         0x80'u8,
         0xBB'u8, # MOV r0l, 0xBB
@@ -788,3 +799,233 @@ suite "step - SP register":
     )
     vm.run().get()
     check vm.sp == 0x1234'u16
+
+suite "interrupts":
+  test "lane registers are valid interrupt indexes for SIE and INT":
+    var captured: seq[Byte]
+    var vm = freshVm(
+      @[
+        Byte(ord(OpCode.MovRegImm)),
+        0x80'u8,
+        0x0F'u8, # MOV r0l, 15
+        Byte(ord(OpCode.SieRegImm)),
+        0x80'u8,
+        0x00'u8,
+        0x0A'u8, # SIE r0l, handler
+        Byte(ord(OpCode.IntReg)),
+        0x80'u8, # INT r0l
+        Byte(ord(OpCode.Halt)),
+        Byte(ord(OpCode.MovRegImm)),
+        0x81'u8,
+        0x4C'u8, # MOV r1l, 'L'
+        Byte(ord(OpCode.Out)),
+        0x00'u8,
+        0x81'u8, # OUT 0, r1l
+        Byte(ord(OpCode.Iret)),
+      ]
+    )
+    vm.ports
+      .registerPort(
+        0,
+        PortDevice(
+          label: "capture",
+          read: proc(): FvmResult[Byte] =
+            Byte(0).ok,
+          write: proc(v: Byte): FvmResult[void] =
+            captured.add(v)
+            ok(),
+        ),
+      )
+      .get()
+    vm.run().get()
+    check captured == @[Byte('L')]
+    check vm.halted
+
+  test "SIE installs a handler and INT immediate resumes after IRET":
+    var captured: seq[Byte]
+    var vm = freshVm(
+      @[
+        Byte(ord(OpCode.MovRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0F'u8, # MOV r0, 15
+        Byte(ord(OpCode.SieRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0B'u8, # SIE r0, handler
+        Byte(ord(OpCode.IntImm)),
+        0x0F'u8, # INT 15
+        Byte(ord(OpCode.Halt)),
+        Byte(ord(OpCode.MovRegImm)),
+        0x81'u8,
+        0x53'u8, # MOV r1l, 'S'
+        Byte(ord(OpCode.Out)),
+        0x00'u8,
+        0x81'u8, # OUT 0, r1l
+        Byte(ord(OpCode.Iret)),
+      ]
+    )
+    vm.ports
+      .registerPort(
+        0,
+        PortDevice(
+          label: "capture",
+          read: proc(): FvmResult[Byte] =
+            Byte(0).ok,
+          write: proc(v: Byte): FvmResult[void] =
+            captured.add(v)
+            ok(),
+        ),
+      )
+      .get()
+    vm.run().get()
+    check captured == @[Byte('S')]
+    check vm.halted
+    check not vm.inInterrupt
+
+  test "invalid opcode enters installed handler and resumes at next byte":
+    var captured: seq[Byte]
+    var vm = freshVm(
+      @[
+        Byte(ord(OpCode.MovRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x02'u8, # MOV r0, 2
+        Byte(ord(OpCode.SieRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0A'u8, # handler at byte 10
+        0xFF'u8, # invalid opcode
+        Byte(ord(OpCode.Halt)),
+        Byte(ord(OpCode.MovRegImm)),
+        0x80'u8,
+        0x49'u8, # MOV r0l, 'I'
+        Byte(ord(OpCode.Out)),
+        0x00'u8,
+        0x80'u8, # OUT 0, r0l
+        Byte(ord(OpCode.Iret)),
+      ]
+    )
+    vm.ports
+      .registerPort(
+        0,
+        PortDevice(
+          label: "capture",
+          read: proc(): FvmResult[Byte] =
+            Byte(0).ok,
+          write: proc(v: Byte): FvmResult[void] =
+            captured.add(v)
+            ok(),
+        ),
+      )
+      .get()
+    vm.run().get()
+    check captured == @[Byte('I')]
+    check vm.halted
+
+  test "DPL drops to user mode and user SIE raises privilege fault":
+    var captured: seq[Byte]
+    var vm = freshVm(
+      @[
+        Byte(ord(OpCode.MovRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x06'u8, # MOV r0, 6
+        Byte(ord(OpCode.SieRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0E'u8, # SIE r0, handler
+        Byte(ord(OpCode.Dpl)),
+        Byte(ord(OpCode.SieRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0F'u8, # user-mode SIE faults
+        Byte(ord(OpCode.Halt)),
+        Byte(ord(OpCode.MovRegImm)),
+        0x81'u8,
+        0x50'u8, # MOV r1l, 'P'
+        Byte(ord(OpCode.Out)),
+        0x00'u8,
+        0x81'u8, # OUT 0, r1l
+        Byte(ord(OpCode.Iret)),
+      ]
+    )
+    vm.ports
+      .registerPort(
+        0,
+        PortDevice(
+          label: "capture",
+          read: proc(): FvmResult[Byte] =
+            Byte(0).ok,
+          write: proc(v: Byte): FvmResult[void] =
+            captured.add(v)
+            ok(),
+        ),
+      )
+      .get()
+    vm.run().get()
+    check captured == @[Byte('P')]
+    check not vm.privileged
+
+  test "nested interrupts are dropped inside handlers":
+    var captured: seq[Byte]
+    var vm = freshVm(
+      @[
+        Byte(ord(OpCode.MovRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x02'u8, # MOV r0, 2
+        Byte(ord(OpCode.SieRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0A'u8, # invalid-opcode handler
+        0xFF'u8, # trigger interrupt 2
+        Byte(ord(OpCode.Halt)),
+        0xFF'u8, # nested invalid opcode should be dropped
+        Byte(ord(OpCode.MovRegImm)),
+        0x81'u8,
+        0x4E'u8, # MOV r1l, 'N'
+        Byte(ord(OpCode.Out)),
+        0x00'u8,
+        0x81'u8, # OUT 0, r1l
+        Byte(ord(OpCode.Iret)),
+      ]
+    )
+    vm.ports
+      .registerPort(
+        0,
+        PortDevice(
+          label: "capture",
+          read: proc(): FvmResult[Byte] =
+            Byte(0).ok,
+          write: proc(v: Byte): FvmResult[void] =
+            captured.add(v)
+            ok(),
+        ),
+      )
+      .get()
+    vm.run().get()
+    check captured == @[Byte('N')]
+    check vm.halted
+
+  test "interrupt example assembles and runs":
+    var captured: seq[Byte]
+    var vm = freshVm(assembleFile("examples/interrupts.fa").get())
+    vm.ports
+      .registerPort(
+        0,
+        PortDevice(
+          label: "capture",
+          read: proc(): FvmResult[Byte] =
+            Byte(0).ok,
+          write: proc(v: Byte): FvmResult[void] =
+            captured.add(v)
+            ok(),
+        ),
+      )
+      .get()
+    vm.run().get()
+    check captured == bytes(
+      "software interrupt ok\n" & "bus fault: unmapped read below stack\n" &
+      "stack underflow: POP on empty stack\n"
+    )

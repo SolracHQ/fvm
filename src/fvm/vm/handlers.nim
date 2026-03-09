@@ -16,7 +16,47 @@ export types
 
 proc getInstructionDef*(opcode: OpCode): InstructionDef
 
+proc raiseInterrupt*(vm: var Vm, index: int): FvmResult[void]
+
 # Shared helpers
+
+proc raiseInterrupt*(vm: var Vm, index: int): FvmResult[void] =
+  if index < 0 or index >= IvtEntryCount:
+    return ("Interrupt index out of range: " & $index).err
+
+  if vm.inInterrupt:
+    debug "Dropping nested interrupt " & $index
+    return ok()
+
+  vm.ictx = InterruptContext(
+    regs: vm.regs,
+    ip: vm.ip,
+    sp: vm.sp,
+    flags: vm.flags,
+    privileged: vm.privileged,
+  )
+  vm.inInterrupt = true
+  vm.privileged = true
+
+  let target = vm.ivt[index]
+  if target == 0'u16:
+    debug "Unhandled interrupt " & $index & ", halting"
+    vm.halted = true
+    return ok()
+
+  debug "Interrupt " & $index & " -> 0x" & toHex(int(target), 4)
+  vm.ip = target
+  ok()
+
+proc requirePrivileged(vm: Vm, instruction: string): FvmResult[void] =
+  if not vm.privileged:
+    return ("Privileged instruction: " & instruction).err
+  ok()
+
+proc interruptIndex(value: Word): FvmResult[int] =
+  if value >= Word(IvtEntryCount):
+    return ("Invalid interrupt vector index: " & $value).err
+  int(value).ok
 
 proc decodeReg(vm: Vm, enc: RegEncoding): Word =
   if enc.isSp:
@@ -103,6 +143,22 @@ proc handleNop(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultO
 proc handleHalt(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
   debug "HALT"
   vm.halted = true
+
+proc handleIret(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+  if not vm.inInterrupt:
+    return "IRET outside interrupt handler".err
+  vm.regs = vm.ictx.regs
+  vm.ip = vm.ictx.ip
+  vm.sp = vm.ictx.sp
+  vm.flags = vm.ictx.flags
+  vm.privileged = vm.ictx.privileged
+  vm.inInterrupt = false
+  debug fmt"IRET -> 0x{vm.ip:04X}"
+
+proc handleDpl(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+  ?requirePrivileged(vm, "DPL")
+  vm.privileged = false
+  debug "DPL -> user mode"
 
 # Stack
 
@@ -372,6 +428,42 @@ proc handleRet(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultO
   debug fmt"RET -> 0x{target:04X}"
   vm.ip = target
 
+proc handleSieRegImm(
+    vm: var Vm, insn: DecodedInstruction
+): FvmResult[void] {.defaultOk.} =
+  ?requirePrivileged(vm, "SIE")
+  let indexEnc = ?expectReg(insn.args[0], "SIE")
+  let index = ?interruptIndex(decodeReg(vm, indexEnc))
+  let target = Address(?expectImm16(insn.args[1], "SIE"))
+  vm.ivt[index] = target
+  debug fmt"SIE r{indexEnc.index}, 0x{target:04X}"
+
+proc handleSieRegReg(
+    vm: var Vm, insn: DecodedInstruction
+): FvmResult[void] {.defaultOk.} =
+  ?requirePrivileged(vm, "SIE")
+  let indexEnc = ?expectReg(insn.args[0], "SIE")
+  let targetEnc = ?expectReg(insn.args[1], "SIE")
+  let index = ?interruptIndex(decodeReg(vm, indexEnc))
+  let target = Address(decodeReg(vm, targetEnc))
+  vm.ivt[index] = target
+  debug fmt"SIE r{indexEnc.index}, r{targetEnc.index} -> 0x{target:04X}"
+
+proc handleIntImm(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+  let index = ?interruptIndex(Word(?expectImm8(insn.args[0], "INT")))
+  let resumeIp = vm.ip + Address(insn.size)
+  vm.ip = resumeIp
+  ?vm.raiseInterrupt(index)
+  debug fmt"INT 0x{index:02X}"
+
+proc handleIntReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+  let enc = ?expectReg(insn.args[0], "INT")
+  let index = ?interruptIndex(decodeReg(vm, enc))
+  let resumeIp = vm.ip + Address(insn.size)
+  vm.ip = resumeIp
+  ?vm.raiseInterrupt(index)
+  debug fmt"INT r{enc.index} -> 0x{index:02X}"
+
 proc handleOut(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
   let port = ?expectImm8(insn.args[0], "OUT")
   let enc = ?expectReg(insn.args[1], "OUT")
@@ -451,6 +543,8 @@ proc execute*(vm: var Vm, insn: DecodedInstruction): FvmResult[void] =
 constArray[OpCode, InstructionDef](instructions):
   result[OpCode.Nop] = InstructionDef(mnemonic: "NOP", handler: handleNop)
   result[OpCode.Halt] = InstructionDef(mnemonic: "HALT", handler: handleHalt)
+  result[OpCode.Iret] = InstructionDef(mnemonic: "IRET", handler: handleIret)
+  result[OpCode.Dpl] = InstructionDef(mnemonic: "DPL", handler: handleDpl)
   result[OpCode.Push] = InstructionDef(mnemonic: "PUSH", handler: handlePush)
   result[OpCode.Pop] = InstructionDef(mnemonic: "POP", handler: handlePop)
   result[OpCode.MovRegImm] = InstructionDef(mnemonic: "MOV", handler: handleMovRegImm)
@@ -482,6 +576,10 @@ constArray[OpCode, InstructionDef](instructions):
   result[OpCode.Call] = InstructionDef(mnemonic: "CALL", handler: handleCall)
   result[OpCode.CallReg] = InstructionDef(mnemonic: "CALL", handler: handleCallReg)
   result[OpCode.Ret] = InstructionDef(mnemonic: "RET", handler: handleRet)
+  result[OpCode.SieRegImm] = InstructionDef(mnemonic: "SIE", handler: handleSieRegImm)
+  result[OpCode.SieRegReg] = InstructionDef(mnemonic: "SIE", handler: handleSieRegReg)
+  result[OpCode.IntImm] = InstructionDef(mnemonic: "INT", handler: handleIntImm)
+  result[OpCode.IntReg] = InstructionDef(mnemonic: "INT", handler: handleIntReg)
   result[OpCode.In] = InstructionDef(mnemonic: "IN", handler: handleIn)
   result[OpCode.Out] = InstructionDef(mnemonic: "OUT", handler: handleOut)
   result[OpCode.Load] = InstructionDef(mnemonic: "LOAD", handler: handleLoad)

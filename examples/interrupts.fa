@@ -1,0 +1,63 @@
+# Interrupt example
+# Run with: fvm run-asm -m0:::raw -s examples/interrupts.fa
+#
+# Installs three handlers:
+#   - INT 15 software interrupt
+#   - bus fault from reading unmapped memory just below the stack
+#   - stack underflow from POP on an empty stack
+#
+# Expected stdout:
+#   software interrupt ok
+#   bus fault: unmapped read below stack
+#   stack underflow: POP on empty stack
+
+.rodata
+    soft_msg: db "software interrupt ok\n", 0
+    bus_msg: db "bus fault: unmapped read below stack\n", 0
+    underflow_msg: db "stack underflow: POP on empty stack\n", 0
+
+.code
+main:
+    MOV r0, 15
+    SIE r0, soft_handler
+
+    MOV r0, 1
+    SIE r0, bus_handler
+
+    MOV r0, 4
+    SIE r0, underflow_handler
+
+    INT 15
+
+    MOV r2, 0xEFFF
+    LOAD r3l, r2
+
+    POP r4
+    HALT
+
+soft_handler:
+    MOV r1, soft_msg
+    CALL print
+    IRET
+
+bus_handler:
+    MOV r1, bus_msg
+    CALL print
+    IRET
+
+underflow_handler:
+    MOV r1, underflow_msg
+    CALL print
+    IRET
+
+print:
+    LOAD r2l, r1
+.loop:
+    CMP r2l, 0
+    JZ .done
+    OUT 0, r2l
+    ADD r1, 1
+    LOAD r2l, r1
+    JMP .loop
+.done:
+    RET

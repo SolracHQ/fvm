@@ -44,16 +44,14 @@ proc encodeInstruction(
     of faReg:
       emitByte(buf, op)
       emitByte(buf, Byte(a.enc))
+    of faImm8:
+      emitByte(buf, op)
+      emitByte(buf, a.imm8)
     of faImm16:
       emitByte(buf, op)
       if node.relocate:
         codeRelocs.add(instrCodeOffset + 1)
       emitWord(buf, a.imm16)
-    of faImm8:
-      return (
-        "1-arg instruction with imm8 has no valid encoding" & " at line " & $node.line &
-        ":" & $node.col
-      ).err
   of 2:
     let a0 = node.args[0]
     let a1 = node.args[1]

@@ -7,9 +7,10 @@ const
   StackBase* = 0xFFFF'u16 ## Stack grows downward from the top of memory.
   StackRegionBase* = 0xF000'u16 ## Base address of the reserved stack region.
   StackRegionSize* = 0x1000'u32 ## Stack region size in bytes.
-  IvtBase* = 0x0000'u16.Address ## Base address of the interrupt vector table.
-  IvtEntries* = 16 ## Number of interrupt vector entries.
-  IvtSize* = IvtEntries.Address * 2 ## IVT byte size: 16 entries × 2 bytes.
+  IvtBase* = 0x0000'u16.Address ## Reserved IVT base for future memory-mapped designs.
+  IvtEntryCount* = 16 ## Number of interrupt vector entries.
+  IvtEntries* = IvtEntryCount ## Backward-compatible alias for old naming.
+  IvtSize* = IvtEntryCount.Address * 2 ## IVT byte size: 16 entries × 2 bytes.
   GeneralRegisterCount* = 16 ## Number of general-purpose registers.
   MaxInstructionArgs* = 2'u8 ## Maximum operand count supported by the ISA.
   MaxPortCount* = 256 ## Number of addressable I/O ports.
@@ -24,3 +25,11 @@ const
   RegHighBit* = 0b0100_0000'u8 ## Bit selecting the high byte lane.
   RegIndexMask* = 0b0000_1111'u8 ## Mask that isolates the register index bits.
   SpEncoding* = RegEncoding(0b0100_0000'u8) ## Reserved encoding used for SP.
+
+  InterruptReset* = 0
+  InterruptBusFault* = 1
+  InterruptInvalidOpcode* = 2
+  InterruptStackOverflow* = 3
+  InterruptStackUnderflow* = 4
+  InterruptPrivilegeFault* = 6
+  InterruptSoftware* = 15

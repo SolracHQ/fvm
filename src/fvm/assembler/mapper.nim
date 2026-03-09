@@ -31,7 +31,9 @@ proc qualifyLabel*(raw: string, currentGlobal: string): string =
 # Label references always produce a 16-bit immediate so they count as
 # hasImm16. Numeric literals wider than 8 bits count as hasImm16 too.
 
-proc hasImm16Arg*(args: seq[Arg]): bool =
+proc hasImm16Arg*(mnemonic: string, args: seq[Arg]): bool =
+  if mnemonic == "SIE" and args.len == 2 and args[0].kind == akReg and args[1].kind != akReg:
+    return true
   # Label references always resolve to a 16-bit address.
   for a in args:
     if a.kind == akLabelRef:
@@ -54,13 +56,15 @@ type SizeKey* = object
 
 const instrSizes* = block:
   var t = initTable[SizeKey, int]()
-  for m in ["NOP", "HALT", "RET"]:
+  for m in ["NOP", "HALT", "RET", "IRET", "DPL"]:
     t[SizeKey(mnemonic: m, argCount: 0, hasImm16: false)] = 1
-  for m in ["PUSH", "POP", "NOT"]:
+  for m in ["PUSH", "POP", "NOT", "INT"]:
     t[SizeKey(mnemonic: m, argCount: 1, hasImm16: false)] = 2
   for m in ["JMP", "JZ", "JNZ", "JC", "JN", "CALL"]:
     t[SizeKey(mnemonic: m, argCount: 1, hasImm16: false)] = 2
     t[SizeKey(mnemonic: m, argCount: 1, hasImm16: true)] = 3
+  t[SizeKey(mnemonic: "SIE", argCount: 2, hasImm16: false)] = 3
+  t[SizeKey(mnemonic: "SIE", argCount: 2, hasImm16: true)] = 4
   for m in [
     "MOV", "ZEXT", "SEXT", "ADD", "SUB", "AND", "OR", "XOR", "CMP", "LOAD", "STORE",
     "IN", "OUT",
@@ -70,7 +74,8 @@ const instrSizes* = block:
   t
 
 proc estimateSize*(mnemonic: string, args: seq[Arg]): FvmResult[int] =
-  let key = SizeKey(mnemonic: mnemonic, argCount: args.len, hasImm16: hasImm16Arg(args))
+  let key =
+    SizeKey(mnemonic: mnemonic, argCount: args.len, hasImm16: hasImm16Arg(mnemonic, args))
   if key in instrSizes:
     return instrSizes[key].ok
   (

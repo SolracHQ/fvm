@@ -435,3 +435,61 @@ Pops a 16-bit address off the stack and jumps to it. Paired with `CALL`.
 ```
 RET
 ```
+
+---
+
+### SIE
+
+Sets one entry in the VM-resident interrupt vector table. The first operand is
+the register holding the vector index. The second operand is the handler
+address, either as a label / immediate or a full-width register.
+
+```
+SIE r, label
+SIE r, 0x1234
+SIE r, r
+```
+
+- Privileged. Executing it in user mode raises interrupt 6.
+- Index must be `0..15`.
+- Address `0` clears the handler.
+
+---
+
+### INT
+
+Raises a software interrupt.
+
+```
+INT 15
+INT r
+```
+
+The immediate form encodes an 8-bit vector index. The register form reads a
+full 16-bit register and the VM requires the value to fit `0..15`.
+
+---
+
+### IRET
+
+Returns from an interrupt handler.
+
+```
+IRET
+```
+
+Restores the saved register file, flags, `ip`, `sp`, and privilege mode from
+the interrupt context.
+
+---
+
+### DPL
+
+Drops privilege level from kernel mode to user mode.
+
+```
+DPL
+```
+
+This instruction is privileged and one-way. Returning to privileged execution
+happens through interrupt delivery.

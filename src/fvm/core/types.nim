@@ -61,6 +61,12 @@ type
     Out
     Load
     Store
+    SieRegImm
+    SieRegReg
+    Iret
+    IntImm
+    IntReg
+    Dpl
 
   FlatArgKind* = enum
     faNone

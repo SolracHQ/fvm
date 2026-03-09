@@ -10,8 +10,6 @@ The encoding is intentionally wasteful: one byte per opcode, one byte per regist
 
 Things I plan to get to eventually, roughly in order:
 
-- privilege bit to distinguish kernel mode from user mode
-- interrupt vector table for hardware faults and software syscalls
 - a basic kernel running on the VM itself
 - virtual devices: display output, keyboard input
 - a step debugger with register inspection and direct memory editing
@@ -51,11 +49,12 @@ graph TD
 - 16 general-purpose 16-bit registers (`r0`..`r15`), with byte-lane access via `r0l` / `r0h`
 - `sp` (stack pointer), also 16-bit, writable like any general register
 - Zero, carry, and negative flags
+- privilege state plus a VM-resident interrupt vector table and saved interrupt context
 - Opcode dispatch through a static jump table; each entry carries the mnemonic string and the handler proc
 
 ### Memory bus
 
-The bus owns the full 64 KB backing array and a list of regions that partition the address space. Each region carries a permission set: `Read`, `Write`, `Execute`. The bus enforces permissions on every access and returns an error for unmapped addresses or permission violations. The VM halts on any bus error.
+The bus owns the full 64 KB backing array and a list of regions that partition the address space. Each region carries a permission set: `Read`, `Write`, `Execute`. The bus enforces permissions on every access and returns an error for unmapped addresses or permission violations. The VM turns those faults into interrupt 1 when a handler is installed; otherwise it halts.
 
 Peripheral devices attach to regions via `deviceRead`/`deviceWrite` callbacks; the bus delegates to them instead of touching the backing array.
 
@@ -76,6 +75,7 @@ Peripheral devices attach to regions via `deviceRead`/`deviceWrite` callbacks; t
 | Jumps | `JMP`, `JZ`, `JNZ`, `JC`, `JN` (immediate and register variants) |
 | Subroutines | `CALL`, `RET` |
 | Memory | `LOAD`, `STORE` |
+| Interrupts | `SIE`, `INT`, `IRET`, `DPL` |
 | Peripherals | `IN`, `OUT` |
 
 All jump and call instructions come in two forms: an immediate address/label operand and a register operand for indirect jumps.
@@ -112,6 +112,7 @@ Local labels scope to the preceding global label, so `.loop` under `multiply:` i
 ```bash
 # assemble and run directly (no object file written)
 just asm examples/io.fa
+just asm examples/interrupts.fa
 
 # with full debug output
 just asm examples/io.fa --debug-level lvlDebug
@@ -148,6 +149,8 @@ just clean    # remove build artifacts
 ```
 
 Tbh the tests are mostly vibecoded; writing tests is not my strongest suit. In practice I test by running examples with `--debug-level lvlDebug`, stepping through cycles with `--step`, or checking output with `--map "0:::hex"`.
+
+The interrupt path now has automated coverage too, including an assembled end-to-end example in [examples/interrupts.fa](examples/interrupts.fa).
 
 ## License
 

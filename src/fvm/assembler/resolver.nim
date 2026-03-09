@@ -65,9 +65,13 @@ const opcodeTable = block:
   t["NOP"] = OpCode.Nop
   t["HALT"] = OpCode.Halt
   t["RET"] = OpCode.Ret
+  t["IRET"] = OpCode.Iret
+  t["DPL"] = OpCode.Dpl
   t["PUSH:R"] = OpCode.Push
   t["POP:R"] = OpCode.Pop
   t["NOT:R"] = OpCode.Not
+  t["INT:R"] = OpCode.IntReg
+  t["INT:8"] = OpCode.IntImm
   t["MOV:R:R"] = OpCode.MovRegReg
   t["MOV:R:8"] = OpCode.MovRegImm
   t["MOV:R:A"] = OpCode.MovRegImm
@@ -101,6 +105,8 @@ const opcodeTable = block:
   t["OUT:8:R"] = OpCode.Out
   t["LOAD:R:R"] = OpCode.Load
   t["STORE:R:R"] = OpCode.Store
+  t["SIE:R:R"] = OpCode.SieRegReg
+  t["SIE:R:A"] = OpCode.SieRegImm
   t
 
 # Argument resolution
@@ -149,6 +155,10 @@ proc resolveInstruction(
   # the handler to read 2 bytes for the immediate, so faImm8 must be promoted
   # to faImm16 when arg0 is a full-width register and arg1 is a numeric immediate.
   if flatArgs.len == 2 and flatArgs[0].kind == faReg and not flatArgs[0].enc.isLane and
+      flatArgs[1].kind == faImm8:
+    flatArgs[1] = FlatArg(kind: faImm16, imm16: uint16(flatArgs[1].imm8))
+
+  if node.mnemonic == "SIE" and flatArgs.len == 2 and flatArgs[0].kind == faReg and
       flatArgs[1].kind == faImm8:
     flatArgs[1] = FlatArg(kind: faImm16, imm16: uint16(flatArgs[1].imm8))
 
