@@ -5,12 +5,13 @@ import std/strutils
 
 import ../format/fvmobject as fmtobject
 import ../core/constants
+import ../errors
 import ./decoders
 import ./handlers
 
 export decoders, handlers, fmtobject
 
-proc newVm*(): FvmResult[Vm] =
+proc newVm*(): Vm =
   ## Creates a VM with an empty memory bus. Call `initRom` before executing.
   Vm(
     bus: newBus(),
@@ -18,32 +19,31 @@ proc newVm*(): FvmResult[Vm] =
     sp: StackBase,
     privileged: true,
     halted: false,
-  ).ok
+  )
 
 proc applyRelocations(
     mem: var seq[Byte], codeBase: Address, baseShift: uint16, relocations: seq[uint16]
-): FvmResult[void] =
+) =
   for reloc in relocations:
     let off = int(codeBase) + int(reloc)
     if off + 1 >= mem.len:
-      return ("Relocation offset out of range: " & $reloc).err
+      raise newRelocationError("Relocation offset out of range: " & $reloc)
     let original = (uint16(mem[off]) shl 8) or uint16(mem[off + 1])
     let patched = original + baseShift
     mem[off] = Byte(patched shr 8)
     mem[off + 1] = Byte(patched and 0xFF)
-  ok()
 
-proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
+proc initRom*(vm: var Vm, obj: FvmObject) =
   let rodataBase = Address(0'u16)
   let codeBase = Address(uint16(rodataBase) + uint16(obj.rodata.len))
   let dataBase = Address(uint16(codeBase) + uint16(obj.code.len))
   let dataEnd = int(dataBase) + obj.data.len
 
   if obj.rodata.len + obj.code.len + obj.data.len > int(StackRegionBase):
-    return (
+    raise newVmLayoutError(
       "Program sections exceed available address space: data ends at 0x" &
       toHex(dataEnd, 4) & " but stack begins at 0x" & toHex(int(StackRegionBase), 4)
-    ).err
+    )
 
   if obj.rodata.len > 0:
     vm.bus.writeRangeDirect(rodataBase, obj.rodata)
@@ -52,15 +52,15 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   if obj.data.len > 0:
     vm.bus.writeRangeDirect(dataBase, obj.data)
 
-  ?applyRelocations(vm.bus.mem, codeBase, 0'u16, obj.relocations)
+  applyRelocations(vm.bus.mem, codeBase, 0'u16, obj.relocations)
 
   if obj.rodata.len > 0:
-    ?vm.bus.mapRegion(romRegion(rodataBase, uint32(obj.rodata.len), "rodata"))
+    vm.bus.mapRegion(romRegion(rodataBase, uint32(obj.rodata.len), "rodata"))
   if obj.code.len > 0:
-    ?vm.bus.mapRegion(codeRegion(codeBase, uint32(obj.code.len), "code"))
+    vm.bus.mapRegion(codeRegion(codeBase, uint32(obj.code.len), "code"))
   if obj.data.len > 0:
-    ?vm.bus.mapRegion(ramRegion(dataBase, uint32(obj.data.len), "data"))
-  ?vm.bus.mapRegion(ramRegion(StackRegionBase, StackRegionSize, "stack"))
+    vm.bus.mapRegion(ramRegion(dataBase, uint32(obj.data.len), "data"))
+  vm.bus.mapRegion(ramRegion(StackRegionBase, StackRegionSize, "stack"))
 
   debug "Entry point: 0x" & toHex(int(obj.entryPoint), 4)
   vm.ip = obj.entryPoint
@@ -70,71 +70,54 @@ proc initRom*(vm: var Vm, obj: FvmObject): FvmResult[void] =
   vm.privileged = true
   vm.ivt = default(array[IvtEntryCount, Address])
   vm.ictx = default(InterruptContext)
-  ok()
 
-proc parseOpCode*(code: Byte): FvmResult[OpCode] =
+proc parseOpCode*(code: Byte): OpCode =
   try:
-    OpCode(code).ok
+    OpCode(code)
   except RangeDefect:
-    ("Invalid opcode byte: 0x" & toHex(int(code), 2)).err
+    raise newInvalidOpcodeError(code)
 
-proc fetch*(vm: Vm): FvmResult[OpCode] =
+proc fetch*(vm: Vm): OpCode =
   if int(vm.ip) >= VmMemorySize:
-    return "Instruction pointer out of bounds".err
-  parseOpCode(?vm.bus.fetch8(vm.ip))
+    raise newInstructionPointerError()
+  parseOpCode(vm.bus.fetch8(vm.ip))
 
-proc classifyRuntimeFault(message: string): int =
-  if message.startsWith("Bus "):
-    InterruptBusFault
-  elif message.startsWith("Stack overflow"):
-    InterruptStackOverflow
-  elif message.startsWith("Stack underflow"):
-    InterruptStackUnderflow
-  elif message.startsWith("Privileged instruction") or
-      message.startsWith("IRET outside interrupt handler") or
-      message.startsWith("Invalid interrupt vector index"):
-    InterruptPrivilegeFault
+proc raiseFaultInterrupt(vm: var Vm, fault: ref VmFault, nextIp: Address) =
+  vm.ip = nextIp
+  if fault of BusFaultError:
+    vm.raiseInterrupt(InterruptBusFault)
+  elif fault of errors.StackOverflowError:
+    vm.raiseInterrupt(InterruptStackOverflow)
+  elif fault of errors.StackUnderflowError:
+    vm.raiseInterrupt(InterruptStackUnderflow)
+  elif fault of PrivilegeFaultError:
+    vm.raiseInterrupt(InterruptPrivilegeFault)
+  elif fault of InvalidOpcodeError:
+    vm.raiseInterrupt(InterruptInvalidOpcode)
   else:
-    -1
+    raise fault
 
-proc step*(vm: var Vm): FvmResult[void] =
-  let fetchByte = vm.bus.fetch8(vm.ip)
-  if fetchByte.isErr:
-    let fault = classifyRuntimeFault(fetchByte.error)
-    if fault >= 0:
-      vm.ip += 1
-      ?vm.raiseInterrupt(fault)
-      return ok()
-    return fetchByte.error.err
+proc step*(vm: var Vm) =
+  let opcode =
+    try:
+      vm.fetch()
+    except VmFault as e:
+      vm.raiseFaultInterrupt(e, vm.ip + 1)
+      return
 
-  let opcode = parseOpCode(fetchByte.get())
-  if opcode.isErr:
-    vm.ip += 1
-    ?vm.raiseInterrupt(InterruptInvalidOpcode)
-    return ok()
+  let decoded =
+    try:
+      vm.decode(opcode)
+    except VmFault as e:
+      vm.raiseFaultInterrupt(e, vm.ip + 1)
+      return
 
-  let insn = vm.decode(opcode.get())
-  if insn.isErr:
-    let fault = classifyRuntimeFault(insn.error)
-    if fault >= 0:
-      vm.ip += 1
-      ?vm.raiseInterrupt(fault)
-      return ok()
-    return insn.error.err
-
-  let decoded = insn.get()
   let startIp = vm.ip
-  let executed = vm.execute(decoded)
-  if executed.isErr:
-    let fault = classifyRuntimeFault(executed.error)
-    if fault >= 0:
-      vm.ip = startIp + Address(decoded.size)
-      ?vm.raiseInterrupt(fault)
-      return ok()
-    return executed.error.err
-  ok()
+  try:
+    vm.execute(decoded)
+  except VmFault as e:
+    vm.raiseFaultInterrupt(e, startIp + Address(decoded.size))
 
-proc run*(vm: var Vm): FvmResult[void] =
+proc run*(vm: var Vm) =
   while not vm.halted:
-    ?vm.step()
-  ok()
+    vm.step()

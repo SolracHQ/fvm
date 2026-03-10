@@ -13,5 +13,4 @@ bin           = @["fvm"]
 
 requires "nim >= 2.2.6"
 
-requires "results >= 0.5.1"
 requires "cligen >= 1.9.6"

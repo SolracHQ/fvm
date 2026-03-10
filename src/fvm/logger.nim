@@ -6,43 +6,39 @@
 import std/logging
 import std/strutils
 
-import core/types
+import errors
 
 export logging ## re-export so importers can use `debug`, `info`, etc.
 
 var consoleLogger: ConsoleLogger ## nil until initLogger() is called
 
-proc parseDebugLevel*(value: string): FvmResult[Level] =
+proc parseDebugLevel*(value: string): Level =
   let normalized = value.strip().toLowerAscii()
   case normalized
   of "lvldebug", "debug":
-    lvlDebug.ok
+    lvlDebug
   of "lvlinfo", "info":
-    lvlInfo.ok
+    lvlInfo
   of "lvlnotice", "notice":
-    lvlNotice.ok
+    lvlNotice
   of "lvlwarn", "warn", "warning":
-    lvlWarn.ok
+    lvlWarn
   of "lvlerror", "error":
-    lvlError.ok
+    lvlError
   of "lvlfatal", "fatal":
-    lvlFatal.ok
+    lvlFatal
   of "lvlnone", "none":
-    lvlNone.ok
+    lvlNone
   else:
-    ("Invalid debug level '" & value & "'").err
+    raise newLoggerError("Invalid debug level '" & value & "'")
 
 proc setDebugLevel*(level: Level) =
   setLogFilter(level)
 
-proc initLogger*(level: string): FvmResult[void] =
+proc initLogger*(level: string) =
   ## Installs the console log handler.  Call exactly once at program startup
   ## (i.e. from the CLI entry point).  Idempotent: a second call is a no-op.
   if consoleLogger == nil:
     consoleLogger = newConsoleLogger()
     addHandler(consoleLogger)
-    let levelResult = parseDebugLevel(level)
-    if levelResult.isErr:
-      return ("Invalid debug level: " & levelResult.error).err
-    setDebugLevel(levelResult.get())
-  ok()
+    setDebugLevel(parseDebugLevel(level))

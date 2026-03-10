@@ -1,7 +1,6 @@
 import ./parser
-import ../core/types
-import ../core/constants
 import ../core/registers
+import ../errors
 
 import std/tables
 
@@ -73,15 +72,15 @@ const instrSizes* = block:
     t[SizeKey(mnemonic: m, argCount: 2, hasImm16: true)] = 4
   t
 
-proc estimateSize*(mnemonic: string, args: seq[Arg]): FvmResult[int] =
+proc estimateSize*(mnemonic: string, args: seq[Arg]): int =
   let key =
     SizeKey(mnemonic: mnemonic, argCount: args.len, hasImm16: hasImm16Arg(mnemonic, args))
   if key in instrSizes:
-    return instrSizes[key].ok
-  (
+    return instrSizes[key]
+  raise newAssemblyMapError(
     "Unknown instruction or operand combination: " & mnemonic & " with " & $args.len &
     " argument(s)"
-  ).err
+  , 0, 0)
 
 proc dbByteCount(items: seq[DbItem]): uint16 =
   for item in items:
@@ -89,7 +88,7 @@ proc dbByteCount(items: seq[DbItem]): uint16 =
 
 # Map entry point
 
-proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
+proc map*(nodes: seq[Node]): SourceMap =
   # Pass 1: accumulate section sizes only, no label recording.
   var rodataSize, codeSize, dataSize: uint16
   var section = secCode
@@ -102,10 +101,10 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
       discard
     of nkInstruction:
       if section != secCode:
-        return (
+        raise newAssemblyMapError(
           "Instruction outside .code section at line " & $node.line & ":" & $node.col
-        ).err
-      codeSize += uint16(?estimateSize(node.mnemonic, node.args))
+        , node.line, node.col)
+      codeSize += uint16(estimateSize(node.mnemonic, node.args))
     of nkDb:
       case section
       of secRoData:
@@ -113,8 +112,11 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
       of secData:
         dataSize += dbByteCount(node.dbItems)
       of secCode:
-        return
-          ("db directive in .code section at line " & $node.line & ":" & $node.col).err
+        raise newAssemblyMapError(
+          "db directive in .code section at line " & $node.line & ":" & $node.col,
+          node.line,
+          node.col,
+        )
     of nkDw:
       let byteCount = uint16(node.dwItems.len * 2)
       case section
@@ -123,8 +125,11 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
       of secData:
         dataSize += byteCount
       of secCode:
-        return
-          ("dw directive in .code section at line " & $node.line & ":" & $node.col).err
+        raise newAssemblyMapError(
+          "dw directive in .code section at line " & $node.line & ":" & $node.col,
+          node.line,
+          node.col,
+        )
 
   # Section bases derived from pass 1 sizes.
   let rodataBase: uint16 = 0
@@ -155,11 +160,14 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
         of secData:
           dataBase + dataOff
       if name in srcMap.labels:
-        return
-          ("Duplicate label: " & name & " at line " & $node.line & ":" & $node.col).err
+        raise newAssemblyMapError(
+          "Duplicate label: " & name & " at line " & $node.line & ":" & $node.col,
+          node.line,
+          node.col,
+        )
       srcMap.labels[name] = absAddr
     of nkInstruction:
-      codeOff += uint16(?estimateSize(node.mnemonic, node.args))
+      codeOff += uint16(estimateSize(node.mnemonic, node.args))
     of nkDb:
       let byteCount = dbByteCount(node.dbItems)
       case section
@@ -179,4 +187,4 @@ proc map*(nodes: seq[Node]): FvmResult[SourceMap] =
       of secCode:
         discard
 
-  srcMap.ok
+  srcMap

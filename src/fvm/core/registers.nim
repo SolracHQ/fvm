@@ -1,26 +1,27 @@
 import ./types
 import ./constants
+import ../errors
 
 export types, constants
 
 proc newRegEncoding*(
     index: int, lane: bool = false, high: bool = false, isSp: bool = false
-): FvmResult[RegEncoding] =
+): RegEncoding =
   ## Builds a register encoding from the logical register selection bits.
   if isSp:
     if lane or high:
-      return "SP encoding cannot specify lane or high byte".err
-    return SpEncoding.ok
+      raise newRegisterEncodingError("SP encoding cannot specify lane or high byte")
+    return SpEncoding
 
   if index < 0 or index >= GeneralRegisterCount:
-    return ("Register index out of range: " & $index).err
+    raise newRegisterEncodingError("Register index out of range: " & $index)
 
   var encoding = RegEncoding(Byte(index) and RegIndexMask)
   if lane:
     encoding = RegEncoding(Byte(encoding) or RegLaneBit)
   if high:
     encoding = RegEncoding(Byte(encoding) or RegHighBit)
-  encoding.ok
+  encoding
 
 proc `==`*(a, b: RegEncoding): bool {.borrow.}
 

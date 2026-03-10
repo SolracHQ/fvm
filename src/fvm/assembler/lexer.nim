@@ -1,4 +1,5 @@
 import ../core/types
+import ../errors
 
 import std/strutils
 
@@ -81,40 +82,42 @@ template isOctDigit(ch: char): bool =
 
 proc parseAnCheck(
     s: string, parser: proc(s: string): int, baseName: string
-): FvmResult[uint16] =
+): uint16 =
   try:
     let val = parser(s)
     if val < 0 or val > 0xFFFF:
-      return ($baseName & " number out of range (must fit in 16 bits): " & s).err
-    return uint16(val).ok
+      raise newAssemblyLexError(
+        baseName & " number out of range (must fit in 16 bits): " & s, 0, 0
+      )
+    return uint16(val)
   except ValueError as e:
-    return ("Invalid " & baseName & " number: " & e.msg).err
+    raise newAssemblyLexError("Invalid " & baseName & " number: " & e.msg, 0, 0)
 
-proc lexHexNumber(self: var Lexer): FvmResult[uint16] =
+proc lexHexNumber(self: var Lexer): uint16 =
   ## Lex a hexadecimal number, starting after "0x" or "0X"
   var number = ""
   while isHexDigit(self.peek()):
     number.add(self.advance())
   if number.len == 0:
-    return "Expected hex digits after 0x".err
+    raise newAssemblyLexError("Expected hex digits after 0x", self.line, self.col)
   parseAnCheck(number, fromHex[int], "Hex")
 
-proc lexDecNumber(self: var Lexer): FvmResult[uint16] =
+proc lexDecNumber(self: var Lexer): uint16 =
   ## Lex a decimal number
   var number = ""
   while isDigit(self.peek()):
     number.add(self.advance())
   if number.len == 0:
-    return "Expected decimal digits".err
+    raise newAssemblyLexError("Expected decimal digits", self.line, self.col)
   parseAnCheck(number, parseInt, "Decimal")
 
-proc lexOctNumber(self: var Lexer): FvmResult[uint16] =
+proc lexOctNumber(self: var Lexer): uint16 =
   ## Lex an octal number, starting after "0o" or "0O"
   var number = ""
   while isOctDigit(self.peek()):
     number.add(self.advance())
   if number.len == 0:
-    return "Expected octal digits after 0o".err
+    raise newAssemblyLexError("Expected octal digits after 0o", self.line, self.col)
   parseAnCheck(number, fromOct[int], "Octal")
 
 # Identifier utilities
@@ -130,60 +133,62 @@ proc lexIdentifier(self: var Lexer): string =
     ident.add(self.advance())
   ident
 
-proc escapeChar(self: var Lexer): FvmResult[Byte] =
+proc escapeChar(self: var Lexer): Byte =
   ## Utility to handle next char after a backslash in string/char literals
   let ch = self.advance()
   case ch
   of 'n':
-    Byte(ord '\n').ok
+    Byte(ord '\n')
   of 't':
-    Byte(ord '\t').ok
+    Byte(ord '\t')
   of 'r':
-    Byte(ord '\r').ok
+    Byte(ord '\r')
   of '\\':
-    Byte(ord '\\').ok
+    Byte(ord '\\')
   of '"':
-    Byte(ord '"').ok
+    Byte(ord '"')
   of '\'':
-    Byte(ord '\'').ok
+    Byte(ord '\'')
   of '0':
-    Byte(0).ok
+    Byte(0)
   else:
-    ("Invalid escape sequence: \\" & $ch).err
+    raise newAssemblyLexError("Invalid escape sequence: \\" & $ch, self.line, self.col)
 
-proc lexString(self: var Lexer): FvmResult[seq[Byte]] =
+proc lexString(self: var Lexer): seq[Byte] =
   ## Lex a string literal, starting after the opening quote
   var str = newSeq[Byte]()
   while true:
     let ch = self.peek()
     if ch == '\0':
-      return "Unterminated string literal".err
+      raise newAssemblyLexError("Unterminated string literal", self.line, self.col)
     elif ch == '"':
       discard self.advance() # consume closing quote
       break
     elif ch == '\\':
       discard self.advance() # consume backslash
-      let esc = ?self.escapeChar()
+      let esc = self.escapeChar()
       str.add(esc)
     else:
       str.add(Byte(ord self.advance()))
-  result = str.ok
+  result = str
 
-proc lexChar(self: var Lexer): FvmResult[Byte] =
+proc lexChar(self: var Lexer): Byte =
   ## Lex a character literal, starting after the opening single quote
   let ch = self.peek()
   if ch == '\0':
-    return "Unterminated character literal".err
+    raise newAssemblyLexError("Unterminated character literal", self.line, self.col)
   elif ch == '\\':
     discard self.advance() # consume backslash
-    result = ok ?self.escapeChar()
+    result = self.escapeChar()
   else:
-    result = ok Byte ord self.advance()
+    result = Byte(ord self.advance())
   if self.peek() != '\'':
-    return "Expected closing single quote for character literal".err
+    raise newAssemblyLexError(
+      "Expected closing single quote for character literal", self.line, self.col
+    )
   discard self.advance() # consume closing quote
 
-proc lexNumber(self: var Lexer): FvmResult[uint16] =
+proc lexNumber(self: var Lexer): uint16 =
   ## Lex a number, which can be in hex (0x), octal (0o), or decimal
   if self.check('0'):
     if self.check('x', 1) or self.check('X', 1):
@@ -196,45 +201,45 @@ proc lexNumber(self: var Lexer): FvmResult[uint16] =
       return self.lexOctNumber()
   return self.lexDecNumber()
 
-proc nextToken(self: var Lexer): FvmResult[Token] =
+proc nextToken(self: var Lexer): Token =
   self.skipWhitespace()
   let startLine = self.line
   let startCol = self.col
   case self.peek()
   of '\0':
-    Token(line: startLine, col: startCol, kind: tkEof).ok
+    Token(line: startLine, col: startCol, kind: tkEof)
   of '.':
     discard self.advance()
-    Token(line: startLine, col: startCol, kind: tkDot).ok
+    Token(line: startLine, col: startCol, kind: tkDot)
   of ':':
     discard self.advance()
-    Token(line: startLine, col: startCol, kind: tkColon).ok
+    Token(line: startLine, col: startCol, kind: tkColon)
   of ',':
     discard self.advance()
-    Token(line: startLine, col: startCol, kind: tkComma).ok
+    Token(line: startLine, col: startCol, kind: tkComma)
   of '\n':
     discard self.advance()
-    Token(line: startLine, col: startCol, kind: tkNewline).ok
+    Token(line: startLine, col: startCol, kind: tkNewline)
   of '"':
     discard self.advance() # consume opening quote
-    Token(line: startLine, col: startCol, kind: tkString, str: ?self.lexString()).ok
+    Token(line: startLine, col: startCol, kind: tkString, str: self.lexString())
   of '\'':
     discard self.advance() # consume opening single quote
-    Token(line: startLine, col: startCol, kind: tkChar, ch: ?self.lexChar()).ok
+    Token(line: startLine, col: startCol, kind: tkChar, ch: self.lexChar())
   of '0' .. '9':
-    Token(line: startLine, col: startCol, kind: tkNumber, number: ?self.lexNumber()).ok
+    Token(line: startLine, col: startCol, kind: tkNumber, number: self.lexNumber())
   of 'a' .. 'z', 'A' .. 'Z', '_':
     let ident = self.lexIdentifier()
-    Token(line: startLine, col: startCol, kind: tkIdent, ident: ident).ok
+    Token(line: startLine, col: startCol, kind: tkIdent, ident: ident)
   else:
     let ch = self.advance()
-    ("Unexpected character: " & $ch).err
+    raise newAssemblyLexError("Unexpected character: " & $ch, startLine, startCol)
 
-proc tokenize*(self: var Lexer): FvmResult[seq[Token]] =
+proc tokenize*(self: var Lexer): seq[Token] =
   var tokens: seq[Token]
   while true:
-    let tok = ?self.nextToken()
+    let tok = self.nextToken()
     tokens.add(tok)
     if tok.kind == tkEof:
       break
-  tokens.ok
+  tokens

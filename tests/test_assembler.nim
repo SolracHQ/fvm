@@ -1,10 +1,14 @@
 import unittest
+import fvm/errors
 import fvm/assembler/assembler
 import fvm/assembler/lexer
 import fvm/assembler/parser
 import fvm/core/types
 import fvm/core/constants
 import fvm/core/registers
+
+template get(value: untyped): untyped =
+  value
 
 # Lexer tests
 
@@ -74,8 +78,8 @@ suite "lexer":
 
   test "number out of 16-bit range is an error":
     var lexer = newLexer("0x10000")
-    let res = lexer.tokenize()
-    check res.isErr
+    expect AssemblyLexError:
+      discard lexer.tokenize()
 
   test "string literal":
     var lexer = newLexer("\"hi\"")
@@ -91,8 +95,8 @@ suite "lexer":
 
   test "unterminated string is an error":
     var lexer = newLexer("\"oops")
-    let res = lexer.tokenize()
-    check res.isErr
+    expect AssemblyLexError:
+      discard lexer.tokenize()
 
   test "char literal":
     var lexer = newLexer("'A'")
@@ -108,8 +112,8 @@ suite "lexer":
 
   test "unexpected character is an error":
     var lexer = newLexer("@")
-    let res = lexer.tokenize()
-    check res.isErr
+    expect AssemblyLexError:
+      discard lexer.tokenize()
 
   test "inline comment is consumed before newline":
     var lexer = newLexer("NOP # do nothing\n")
@@ -195,8 +199,8 @@ suite "parser: section directives":
     var lexer = newLexer(".bss\n")
     let tokens = lexer.tokenize().get()
     var parser = newParser(tokens)
-    let res = parser.parse()
-    check res.isErr
+    expect AssemblyParseError:
+      discard parser.parse()
 
 suite "parser: instructions":
   test "bare instruction no args":
@@ -311,8 +315,8 @@ suite "parser: data directives":
     var lexer = newLexer("db 0x100\n")
     let tokens = lexer.tokenize().get()
     var parser = newParser(tokens)
-    let res = parser.parse()
-    check res.isErr
+    expect AssemblyParseError:
+      discard parser.parse()
 
   test "dw with single word":
     var lexer = newLexer("dw 0x1234\n")
@@ -350,8 +354,7 @@ suite "parser: extra newlines and blank lines":
 
 suite "assembler: interrupt instructions":
   test "SIE label, DPL, INT imm, and IRET encode correctly":
-    let obj =
-      assembleSource(
+    let obj = assembleSource(
         """
 main:
     MOV r0, 15
@@ -363,23 +366,25 @@ main:
 handler:
     IRET
 """
-      ).get()
+      )
+      .get()
 
-    check obj.code == @[
-      Byte(ord(OpCode.MovRegImm)),
-      0x00'u8,
-      0x00'u8,
-      0x0F'u8,
-      Byte(ord(OpCode.SieRegImm)),
-      0x00'u8,
-      0x00'u8,
-      0x0C'u8,
-      Byte(ord(OpCode.Dpl)),
-      Byte(ord(OpCode.IntImm)),
-      0x0F'u8,
-      Byte(ord(OpCode.Halt)),
-      Byte(ord(OpCode.Iret)),
-    ]
+    check obj.code ==
+      @[
+        Byte(ord(OpCode.MovRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0F'u8,
+        Byte(ord(OpCode.SieRegImm)),
+        0x00'u8,
+        0x00'u8,
+        0x0C'u8,
+        Byte(ord(OpCode.Dpl)),
+        Byte(ord(OpCode.IntImm)),
+        0x0F'u8,
+        Byte(ord(OpCode.Halt)),
+        Byte(ord(OpCode.Iret)),
+      ]
     check obj.relocations == @[uint16(6)]
 
   test "INT register form encodes as unary register":
@@ -388,9 +393,4 @@ handler:
 
   test "SIE with lane register index still encodes imm16 target":
     let obj = assembleSource("SIE r0l, 0x000A\n").get()
-    check obj.code == @[
-      Byte(ord(OpCode.SieRegImm)),
-      0x80'u8,
-      0x00'u8,
-      0x0A'u8,
-    ]
+    check obj.code == @[Byte(ord(OpCode.SieRegImm)), 0x80'u8, 0x00'u8, 0x0A'u8]

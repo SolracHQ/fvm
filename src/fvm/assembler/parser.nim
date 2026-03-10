@@ -2,6 +2,7 @@ import ./lexer
 import ../core/types
 import ../core/constants
 import ../core/registers
+import ../errors
 
 import std/tables
 
@@ -82,11 +83,11 @@ const registerNames = block:
 proc isRegister(ident: string): bool =
   ident in registerNames
 
-proc parseRegister(ident: string): FvmResult[RegEncoding] =
+proc parseRegister(ident: string): RegEncoding =
   if ident in registerNames:
-    registerNames[ident].ok
+    registerNames[ident]
   else:
-    ("Unknown register: " & ident).err
+    raise newAssemblyParseError("Unknown register: " & ident, 0, 0)
 
 # Parser cursor utilities
 
@@ -108,15 +109,15 @@ proc advance(self: var Parser): Token =
   if result.kind != tkEof:
     self.pos += 1
 
-proc expect(self: var Parser, kind: TokenKind): FvmResult[Token] =
+proc expect(self: var Parser, kind: TokenKind): Token =
   let tok = self.peek()
   if tok.kind != kind:
-    return (
+    raise newAssemblyParseError(
       "Expected " & $kind & " but got " & $tok.kind & " at line " & $tok.line & ":" &
       $tok.col
-    ).err
+    , tok.line, tok.col)
   discard self.advance()
-  tok.ok
+  tok
 
 proc skipNewlines(self: var Parser) =
   while self.check(tkNewline):
@@ -127,46 +128,46 @@ proc atEnd(self: Parser): bool =
 
 # Argument parsing
 
-proc parseArg(self: var Parser): FvmResult[Arg] =
+proc parseArg(self: var Parser): Arg =
   let tok = self.peek()
   case tok.kind
   of tkIdent:
     discard self.advance()
     if isRegister(tok.ident):
-      let enc = ?parseRegister(tok.ident)
-      Arg(line: tok.line, col: tok.col, kind: akReg, reg: RegArg(enc: enc)).ok
+      let enc = parseRegister(tok.ident)
+      Arg(line: tok.line, col: tok.col, kind: akReg, reg: RegArg(enc: enc))
     else:
-      Arg(line: tok.line, col: tok.col, kind: akLabelRef, lbl: LabelRef(raw: tok.ident)).ok
+      Arg(line: tok.line, col: tok.col, kind: akLabelRef, lbl: LabelRef(raw: tok.ident))
   of tkDot:
     discard self.advance()
-    let ident = ?self.expect(tkIdent)
+    let ident = self.expect(tkIdent)
     let raw = "." & ident.ident
-    Arg(line: tok.line, col: tok.col, kind: akLabelRef, lbl: LabelRef(raw: raw)).ok
+    Arg(line: tok.line, col: tok.col, kind: akLabelRef, lbl: LabelRef(raw: raw))
   of tkNumber:
     discard self.advance()
-    Arg(line: tok.line, col: tok.col, kind: akImm, imm: ImmArg(value: tok.number)).ok
+    Arg(line: tok.line, col: tok.col, kind: akImm, imm: ImmArg(value: tok.number))
   of tkChar:
     discard self.advance()
-    Arg(line: tok.line, col: tok.col, kind: akImm, imm: ImmArg(value: uint16(tok.ch))).ok
+    Arg(line: tok.line, col: tok.col, kind: akImm, imm: ImmArg(value: uint16(tok.ch)))
   else:
-    (
+    raise newAssemblyParseError(
       "Unexpected token in argument position: " & $tok.kind & " at line " & $tok.line &
       ":" & $tok.col
-    ).err
+    , tok.line, tok.col)
 
-proc parseArgs(self: var Parser): FvmResult[seq[Arg]] =
+proc parseArgs(self: var Parser): seq[Arg] =
   var args: seq[Arg]
   if self.check(tkNewline) or self.check(tkEof):
-    return args.ok
-  args.add(?self.parseArg())
+    return args
+  args.add(self.parseArg())
   while self.check(tkComma):
     discard self.advance()
-    args.add(?self.parseArg())
-  args.ok
+    args.add(self.parseArg())
+  args
 
 # Data directive parsing
 
-proc parseDbItems(self: var Parser): FvmResult[seq[DbItem]] =
+proc parseDbItems(self: var Parser): seq[DbItem] =
   var items: seq[DbItem]
   while true:
     let tok = self.peek()
@@ -177,25 +178,25 @@ proc parseDbItems(self: var Parser): FvmResult[seq[DbItem]] =
     of tkNumber:
       discard self.advance()
       if tok.number > 0xFF:
-        return (
+        raise newAssemblyParseError(
           "db value out of byte range: " & $tok.number & " at line " & $tok.line & ":" &
           $tok.col
-        ).err
+        , tok.line, tok.col)
       items.add(DbItem(isStr: false, value: Byte(tok.number)))
     of tkChar:
       discard self.advance()
       items.add(DbItem(isStr: false, value: tok.ch))
     else:
-      return (
+      raise newAssemblyParseError(
         "Unexpected token in db directive: " & $tok.kind & " at line " & $tok.line & ":" &
         $tok.col
-      ).err
+      , tok.line, tok.col)
     if not self.check(tkComma):
       break
     discard self.advance()
-  items.ok
+  items
 
-proc parseDwItems(self: var Parser): FvmResult[seq[uint16]] =
+proc parseDwItems(self: var Parser): seq[uint16] =
   var items: seq[uint16]
   while true:
     let tok = self.peek()
@@ -207,50 +208,50 @@ proc parseDwItems(self: var Parser): FvmResult[seq[uint16]] =
       discard self.advance()
       items.add(uint16(tok.ch))
     else:
-      return (
+      raise newAssemblyParseError(
         "Unexpected token in dw directive: " & $tok.kind & " at line " & $tok.line & ":" &
         $tok.col
-      ).err
+      , tok.line, tok.col)
     if not self.check(tkComma):
       break
     discard self.advance()
-  items.ok
+  items
 
 # Section directive parsing
 
 proc parseSectionDirective(
     self: var Parser, dotLine: uint16, dotCol: uint16
-): FvmResult[Node] =
-  let ident = ?self.expect(tkIdent)
+): Node =
+  let ident = self.expect(tkIdent)
   case ident.ident
   of "code":
-    Node(line: dotLine, col: dotCol, kind: nkSection, section: secCode).ok
+    Node(line: dotLine, col: dotCol, kind: nkSection, section: secCode)
   of "rodata":
-    Node(line: dotLine, col: dotCol, kind: nkSection, section: secRoData).ok
+    Node(line: dotLine, col: dotCol, kind: nkSection, section: secRoData)
   of "data":
-    Node(line: dotLine, col: dotCol, kind: nkSection, section: secData).ok
+    Node(line: dotLine, col: dotCol, kind: nkSection, section: secData)
   else:
-    (
+    raise newAssemblyParseError(
       "Unknown section directive: ." & ident.ident & " at line " & $ident.line & ":" &
       $ident.col
-    ).err
+    , ident.line, ident.col)
 
 # Top-level line parsing
 
-proc parseLineContent(self: var Parser, nodes: var seq[Node]): FvmResult[void] =
+proc parseLineContent(self: var Parser, nodes: var seq[Node]) =
   let tok = self.peek()
   case tok.kind
   of tkIdent:
     discard self.advance()
     case tok.ident
     of "db":
-      let items = ?self.parseDbItems()
+      let items = self.parseDbItems()
       nodes.add(Node(line: tok.line, col: tok.col, kind: nkDb, dbItems: items))
     of "dw":
-      let items = ?self.parseDwItems()
+      let items = self.parseDwItems()
       nodes.add(Node(line: tok.line, col: tok.col, kind: nkDw, dwItems: items))
     else:
-      let args = ?self.parseArgs()
+      let args = self.parseArgs()
       nodes.add(
         Node(
           line: tok.line,
@@ -261,20 +262,19 @@ proc parseLineContent(self: var Parser, nodes: var seq[Node]): FvmResult[void] =
         )
       )
   else:
-    return (
+    raise newAssemblyParseError(
       "Expected instruction or directive at line " & $tok.line & ":" & $tok.col &
       ", got " & $tok.kind
-    ).err
-  ok()
+    , tok.line, tok.col)
 
-proc parseLine(self: var Parser): FvmResult[seq[Node]] =
+proc parseLine(self: var Parser): seq[Node] =
   var nodes: seq[Node]
   let tok = self.peek()
 
   case tok.kind
   of tkNewline, tkEof:
     discard self.advance()
-    return nodes.ok
+    return nodes
   of tkDot:
     discard self.advance()
     if self.check(tkIdent) and self.check(tkColon, 1):
@@ -285,9 +285,9 @@ proc parseLine(self: var Parser): FvmResult[seq[Node]] =
       )
       # local label may be followed by content on the same line: .loop: INSTR
       if not self.check(tkNewline) and not self.check(tkEof):
-        ?self.parseLineContent(nodes)
+        self.parseLineContent(nodes)
     else:
-      nodes.add(?self.parseSectionDirective(tok.line, tok.col))
+      nodes.add(self.parseSectionDirective(tok.line, tok.col))
   of tkIdent:
     discard self.advance()
     if self.check(tkColon):
@@ -295,17 +295,17 @@ proc parseLine(self: var Parser): FvmResult[seq[Node]] =
       nodes.add(Node(line: tok.line, col: tok.col, kind: nkLabel, name: tok.ident))
       # global label may be followed by content on the same line: msg: db ...
       if not self.check(tkNewline) and not self.check(tkEof):
-        ?self.parseLineContent(nodes)
+        self.parseLineContent(nodes)
     else:
       case tok.ident
       of "db":
-        let items = ?self.parseDbItems()
+        let items = self.parseDbItems()
         nodes.add(Node(line: tok.line, col: tok.col, kind: nkDb, dbItems: items))
       of "dw":
-        let items = ?self.parseDwItems()
+        let items = self.parseDwItems()
         nodes.add(Node(line: tok.line, col: tok.col, kind: nkDw, dwItems: items))
       else:
-        let args = ?self.parseArgs()
+        let args = self.parseArgs()
         nodes.add(
           Node(
             line: tok.line,
@@ -317,28 +317,31 @@ proc parseLine(self: var Parser): FvmResult[seq[Node]] =
         )
   else:
     let ch = self.advance()
-    return
-      ("Unexpected token at line " & $ch.line & ":" & $ch.col & ": " & $ch.kind).err
+    raise newAssemblyParseError(
+      "Unexpected token at line " & $ch.line & ":" & $ch.col & ": " & $ch.kind,
+      ch.line,
+      ch.col,
+    )
 
   let eol = self.peek()
   if eol.kind != tkNewline and eol.kind != tkEof:
-    return (
+    raise newAssemblyParseError(
       "Expected newline after statement at line " & $eol.line & ":" & $eol.col & ", got " &
       $eol.kind
-    ).err
+    , eol.line, eol.col)
   if eol.kind == tkNewline:
     discard self.advance()
 
-  nodes.ok
+  nodes
 
 # Entry point
 
-proc parse*(self: var Parser): FvmResult[seq[Node]] =
+proc parse*(self: var Parser): seq[Node] =
   var nodes: seq[Node]
   while not self.atEnd():
     self.skipNewlines()
     if self.atEnd():
       break
-    let lineNodes = ?self.parseLine()
+    let lineNodes = self.parseLine()
     nodes.add(lineNodes)
-  nodes.ok
+  nodes

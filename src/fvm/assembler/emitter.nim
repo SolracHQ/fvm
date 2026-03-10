@@ -3,6 +3,7 @@ import ./mapper
 import ./parser
 import ../core/types
 import ../core/constants
+import ../errors
 import ../format/fvmobject
 
 # Instruction encoding
@@ -25,7 +26,7 @@ proc emitWord(buf: var seq[Byte], w: uint16) =
 
 proc encodeInstruction(
     node: FlatNode, codeRelocs: var seq[uint16], codeBase: uint16
-): FvmResult[seq[Byte]] =
+): seq[Byte] =
   var buf: seq[Byte]
   let op = Byte(ord(node.opcode))
   let instrCodeOffset = node.nodeAddr - codeBase
@@ -37,10 +38,10 @@ proc encodeInstruction(
     let a = node.args[0]
     case a.kind
     of faNone:
-      return (
+      raise newAssemblyEmitError(
         "Missing operand in encoded instruction" & " at line " & $node.line & ":" &
         $node.col
-      ).err
+      , node.line, node.col)
     of faReg:
       emitByte(buf, op)
       emitByte(buf, Byte(a.enc))
@@ -58,26 +59,26 @@ proc encodeInstruction(
     emitByte(buf, op)
     case a0.kind
     of faNone:
-      return (
+      raise newAssemblyEmitError(
         "Missing first operand in encoded instruction" & " at line " & $node.line & ":" &
         $node.col
-      ).err
+      , node.line, node.col)
     of faImm8:
       # OUT port, reg: opcode imm8 enc
       if a1.kind != faReg:
-        return (
+        raise newAssemblyEmitError(
           "OUT encoding requires a register second operand" & " at line " & $node.line &
           ":" & $node.col
-        ).err
+        , node.line, node.col)
       emitByte(buf, a0.imm8)
       emitByte(buf, Byte(a1.enc))
     of faReg:
       case a1.kind
       of faNone:
-        return (
+        raise newAssemblyEmitError(
           "Missing second operand in encoded instruction" & " at line " & $node.line &
           ":" & $node.col
-        ).err
+        , node.line, node.col)
       of faReg:
         emitByte(buf, Byte(a0.enc))
         emitByte(buf, Byte(a1.enc))
@@ -90,30 +91,30 @@ proc encodeInstruction(
           codeRelocs.add(instrCodeOffset + 2)
         emitWord(buf, a1.imm16)
     of faImm16:
-      return (
+      raise newAssemblyEmitError(
         "Unexpected imm16 in first operand position" & " at line " & $node.line & ":" &
         $node.col
-      ).err
+      , node.line, node.col)
   else:
-    return (
+    raise newAssemblyEmitError(
       "Instruction with " & $node.args.len & " arguments has no encoding" & " at line " &
       $node.line & ":" & $node.col
-    ).err
+    , node.line, node.col)
 
-  buf.ok
+  buf
 
 # Section assembly
 
 proc assembleSections(
     nodes: seq[FlatNode], codeBase: uint16
-): FvmResult[tuple[rodata, code, data: seq[Byte], relocations: seq[uint16]]] =
+): tuple[rodata, code, data: seq[Byte], relocations: seq[uint16]] =
   var rodata, code, data: seq[Byte]
   var codeRelocs: seq[uint16]
 
   for node in nodes:
     case node.kind
     of fnInstruction:
-      let encoded = ?encodeInstruction(node, codeRelocs, codeBase)
+      let encoded = encodeInstruction(node, codeRelocs, codeBase)
       code.add(encoded)
     of fnBytes:
       case node.section
@@ -124,11 +125,11 @@ proc assembleSections(
       of secData:
         data.add(node.bytes)
 
-  (rodata, code, data, codeRelocs).ok
+  (rodata, code, data, codeRelocs)
 
-proc emit*(program: ResolvedProgram, sizes: SectionSizes): FvmResult[FvmObject] =
+proc emit*(program: ResolvedProgram, sizes: SectionSizes): FvmObject =
   let codeBase = sizes.rodata
-  let (rodata, code, data, relocations) = ?assembleSections(program.nodes, codeBase)
+  let (rodata, code, data, relocations) = assembleSections(program.nodes, codeBase)
   FvmObject(
     version: FvmVersion,
     entryPoint: program.entryPoint,
@@ -136,4 +137,4 @@ proc emit*(program: ResolvedProgram, sizes: SectionSizes): FvmResult[FvmObject] 
     code: code,
     data: data,
     relocations: relocations,
-  ).ok
+  )

@@ -3,36 +3,36 @@
 import std/strutils
 
 import ../../core/types
+import ../../errors
 import ../ports
 import ./zero
 
 proc hexFileRead*(stream: File): PortRead =
   ## Creates a port reader that consumes one hexadecimal byte per line.
-  proc(): FvmResult[Byte] =
+  proc(): Byte =
     try:
       let line = stream.readLine().strip()
       if line.len == 0:
-        return "EOF on port read".err
+        raise newPortEofError()
       let digits =
         if line.startsWith("0x") or line.startsWith("0X"):
           line[2 ..^ 1]
         else:
           line
-      Byte(fromHex[int](digits)).ok
+      Byte(fromHex[int](digits))
     except EOFError:
-      "EOF on port read".err
+      raise newPortEofError()
     except ValueError as e:
-      ("Bad hex input on port read: " & e.msg).err
+      raise newPortValueError("Bad hex input on port read: " & e.msg)
 
 proc hexFileWrite*(stream: File): PortWrite =
   ## Creates a port writer that emits one hexadecimal byte per line.
-  proc(value: Byte): FvmResult[void] =
+  proc(value: Byte) =
     try:
       stream.write("0x" & toHex(int(value), 2) & "\n")
       stream.flushFile()
-      ok()
     except IOError as e:
-      e.msg.err
+      raise newPortIoError(e.msg)
 
 proc hexFileReadDevice*(stream: File, label = "hex-file-read"): PortDevice =
   ## Creates a read-focused device backed by a hex-encoded input file.

@@ -11,22 +11,23 @@ import ../core/constants
 import ../core/registers
 import ../core/flags
 import ../utils
+import ../errors
 
 export types
 
 proc getInstructionDef*(opcode: OpCode): InstructionDef
 
-proc raiseInterrupt*(vm: var Vm, index: int): FvmResult[void]
+proc raiseInterrupt*(vm: var Vm, index: int)
 
 # Shared helpers
 
-proc raiseInterrupt*(vm: var Vm, index: int): FvmResult[void] =
+proc raiseInterrupt*(vm: var Vm, index: int) =
   if index < 0 or index >= IvtEntryCount:
-    return ("Interrupt index out of range: " & $index).err
+    raise newInterruptRaiseIndexError(index)
 
   if vm.inInterrupt:
     debug "Dropping nested interrupt " & $index
-    return ok()
+    return
 
   vm.ictx = InterruptContext(
     regs: vm.regs,
@@ -42,21 +43,19 @@ proc raiseInterrupt*(vm: var Vm, index: int): FvmResult[void] =
   if target == 0'u16:
     debug "Unhandled interrupt " & $index & ", halting"
     vm.halted = true
-    return ok()
+    return
 
   debug "Interrupt " & $index & " -> 0x" & toHex(int(target), 4)
   vm.ip = target
-  ok()
 
-proc requirePrivileged(vm: Vm, instruction: string): FvmResult[void] =
+proc requirePrivileged(vm: Vm, instruction: string) =
   if not vm.privileged:
-    return ("Privileged instruction: " & instruction).err
-  ok()
+    raise newPrivilegeFaultError("Privileged instruction: " & instruction)
 
-proc interruptIndex(value: Word): FvmResult[int] =
+proc interruptIndex(value: Word): int =
   if value >= Word(IvtEntryCount):
-    return ("Invalid interrupt vector index: " & $value).err
-  int(value).ok
+    raise newInterruptIndexError(value)
+  int(value)
 
 proc decodeReg(vm: Vm, enc: RegEncoding): Word =
   if enc.isSp:
@@ -111,42 +110,42 @@ proc subCore(a, b: Word, isLane: bool): ArithResult {.inline.} =
   let carry = uint32(b) > uint32(a)
   (Word((uint32(a) - uint32(b)) and mask), carry)
 
-proc expectReg(arg: FlatArg, name: string): FvmResult[RegEncoding] =
+proc expectReg(arg: FlatArg, name: string): RegEncoding =
   if arg.kind != faReg:
-    return ("Expected register operand for " & name).err
-  arg.enc.ok
+    raise newOperandKindError("Expected register operand for " & name)
+  arg.enc
 
-proc expectImm(arg: FlatArg, name: string): FvmResult[Word] =
+proc expectImm(arg: FlatArg, name: string): Word =
   case arg.kind
   of faImm8:
-    Word(arg.imm8).ok
+    Word(arg.imm8)
   of faImm16:
-    arg.imm16.ok
+    arg.imm16
   else:
-    ("Expected immediate operand for " & name).err
+    raise newOperandKindError("Expected immediate operand for " & name)
 
-proc expectImm8(arg: FlatArg, name: string): FvmResult[Byte] =
+proc expectImm8(arg: FlatArg, name: string): Byte =
   if arg.kind != faImm8:
-    return ("Expected 8-bit immediate operand for " & name).err
-  arg.imm8.ok
+    raise newOperandKindError("Expected 8-bit immediate operand for " & name)
+  arg.imm8
 
-proc expectImm16(arg: FlatArg, name: string): FvmResult[Word] =
+proc expectImm16(arg: FlatArg, name: string): Word =
   if arg.kind != faImm16:
-    return ("Expected 16-bit immediate operand for " & name).err
-  arg.imm16.ok
+    raise newOperandKindError("Expected 16-bit immediate operand for " & name)
+  arg.imm16
 
 # Control
 
-proc handleNop(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+proc handleNop(vm: var Vm, insn: DecodedInstruction) =
   debug "NOP"
 
-proc handleHalt(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+proc handleHalt(vm: var Vm, insn: DecodedInstruction) =
   debug "HALT"
   vm.halted = true
 
-proc handleIret(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
+proc handleIret(vm: var Vm, insn: DecodedInstruction) =
   if not vm.inInterrupt:
-    return "IRET outside interrupt handler".err
+    raise newInterruptStateError()
   vm.regs = vm.ictx.regs
   vm.ip = vm.ictx.ip
   vm.sp = vm.ictx.sp
@@ -155,42 +154,42 @@ proc handleIret(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.default
   vm.inInterrupt = false
   debug fmt"IRET -> 0x{vm.ip:04X}"
 
-proc handleDpl(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  ?requirePrivileged(vm, "DPL")
+proc handleDpl(vm: var Vm, insn: DecodedInstruction) =
+  requirePrivileged(vm, "DPL")
   vm.privileged = false
   debug "DPL -> user mode"
 
 # Stack
 
-proc handlePush(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "PUSH")
+proc handlePush(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "PUSH")
   let value = decodeReg(vm, enc)
   if enc.isLane:
     if vm.sp == 0'u16:
-      return "Stack overflow on PUSH".err
+      raise newStackOverflowError("Stack overflow on PUSH")
     vm.sp -= 1
-    ?vm.bus.write8(vm.sp, Byte(value))
+    vm.bus.write8(vm.sp, Byte(value))
     debug fmt"PUSH r{enc.index}(lane) = 0x{value:02X}"
   else:
     if vm.sp <= 1'u16:
-      return "Stack overflow on PUSH".err
+      raise newStackOverflowError("Stack overflow on PUSH")
     vm.sp -= 2
-    ?vm.bus.write16(vm.sp, value)
+    vm.bus.write16(vm.sp, value)
     debug fmt"PUSH r{enc.index} = 0x{value:04X}"
 
-proc handlePop(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "POP")
+proc handlePop(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "POP")
   if enc.isLane:
     if vm.sp == StackBase:
-      return "Stack underflow on POP".err
-    let value = ?vm.bus.read8(vm.sp)
+      raise newStackUnderflowError("Stack underflow on POP")
+    let value = vm.bus.read8(vm.sp)
     vm.sp += 1
     writeReg(vm, enc, Word(value))
     debug fmt"POP r{enc.index}(lane) = 0x{value:02X}"
   else:
     if int(vm.sp) + 1 >= int(StackBase):
-      return "Stack underflow on POP".err
-    let value = ?vm.bus.read16(vm.sp)
+      raise newStackUnderflowError("Stack underflow on POP")
+    let value = vm.bus.read16(vm.sp)
     vm.sp += 2
     writeReg(vm, enc, value)
     debug fmt"POP r{enc.index} = 0x{value:04X}"
@@ -199,9 +198,9 @@ proc handlePop(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultO
 
 proc handleMovRegImm(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "MOV")
-  let imm = ?expectImm(insn.args[1], "MOV")
+)=
+  let dstEnc = expectReg(insn.args[0], "MOV")
+  let imm = expectImm(insn.args[1], "MOV")
   if dstEnc.isLane:
     writeReg(vm, dstEnc, imm)
     debug fmt"MOV r{dstEnc.index}(lane), 0x{Byte(imm):02X}"
@@ -211,107 +210,107 @@ proc handleMovRegImm(
 
 proc handleMovRegReg(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "MOV")
-  let srcEnc = ?expectReg(insn.args[1], "MOV")
+)=
+  let dstEnc = expectReg(insn.args[0], "MOV")
+  let srcEnc = expectReg(insn.args[1], "MOV")
   let value = decodeReg(vm, srcEnc)
   writeReg(vm, dstEnc, value)
   debug fmt"MOV r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
 
 proc handleZextRegReg(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "ZEXT")
-  let srcEnc = ?expectReg(insn.args[1], "ZEXT")
+)=
+  let dstEnc = expectReg(insn.args[0], "ZEXT")
+  let srcEnc = expectReg(insn.args[1], "ZEXT")
   if not srcEnc.isLane:
-    return "Source for ZEXT must be a byte-lane register".err
+    raise newOperandKindError("Source for ZEXT must be a byte-lane register")
   let value = decodeReg(vm, srcEnc)
   writeReg(vm, dstEnc, Word(value))
   debug fmt"ZEXT r{dstEnc.index}, r{srcEnc.index}(lane) = 0x{value:02X}"
 
 proc handleSextRegReg(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "SEXT")
-  let srcEnc = ?expectReg(insn.args[1], "SEXT")
+)=
+  let dstEnc = expectReg(insn.args[0], "SEXT")
+  let srcEnc = expectReg(insn.args[1], "SEXT")
   if not srcEnc.isLane:
-    return "Source for SEXT must be a byte-lane register".err
+    raise newOperandKindError("Source for SEXT must be a byte-lane register")
   let value = cast[int8](decodeReg(vm, srcEnc).uint8).Word
   writeReg(vm, dstEnc, value)
   debug fmt"SEXT r{dstEnc.index}, r{srcEnc.index}(lane) = 0x{value:02X}"
 
 # Arithmetic
 
-proc handleAdd(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "ADD")
-  let srcEnc = ?expectReg(insn.args[1], "ADD")
+proc handleAdd(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "ADD")
+  let srcEnc = expectReg(insn.args[1], "ADD")
   if dstEnc.laneTag != srcEnc.laneTag:
-    return "ADD operand width mismatch".err
+    raise newOperandWidthError("ADD operand width mismatch")
   let (value, carry) =
     addCore(decodeReg(vm, dstEnc), decodeReg(vm, srcEnc), dstEnc.isLane)
   setArithFlags(vm, value, carry, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"ADD r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
 
-proc handleAddImm(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "ADDI")
-  let imm = ?expectImm(insn.args[1], "ADDI")
+proc handleAddImm(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "ADDI")
+  let imm = expectImm(insn.args[1], "ADDI")
   let (value, carry) = addCore(decodeReg(vm, dstEnc), imm, dstEnc.isLane)
   setArithFlags(vm, value, carry, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"ADDI r{dstEnc.index}, 0x{imm:X} = 0x{value:04X}"
 
-proc handleSub(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "SUB")
-  let srcEnc = ?expectReg(insn.args[1], "SUB")
+proc handleSub(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "SUB")
+  let srcEnc = expectReg(insn.args[1], "SUB")
   if dstEnc.laneTag != srcEnc.laneTag:
-    return "SUB operand width mismatch".err
+    raise newOperandWidthError("SUB operand width mismatch")
   let (value, carry) =
     subCore(decodeReg(vm, dstEnc), decodeReg(vm, srcEnc), dstEnc.isLane)
   setArithFlags(vm, value, carry, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"SUB r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
 
-proc handleSubImm(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "SUBI")
-  let imm = ?expectImm(insn.args[1], "SUBI")
+proc handleSubImm(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "SUBI")
+  let imm = expectImm(insn.args[1], "SUBI")
   let (value, carry) = subCore(decodeReg(vm, dstEnc), imm, dstEnc.isLane)
   setArithFlags(vm, value, carry, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"SUBI r{dstEnc.index}, 0x{imm:X} = 0x{value:04X}"
 
-proc handleAnd(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "AND")
-  let srcEnc = ?expectReg(insn.args[1], "AND")
+proc handleAnd(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "AND")
+  let srcEnc = expectReg(insn.args[1], "AND")
   if dstEnc.laneTag != srcEnc.laneTag:
-    return "AND operand width mismatch".err
+    raise newOperandWidthError("AND operand width mismatch")
   let value = decodeReg(vm, dstEnc) and decodeReg(vm, srcEnc)
   setArithFlags(vm, value, false, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"AND r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
 
-proc handleOr(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "OR")
-  let srcEnc = ?expectReg(insn.args[1], "OR")
+proc handleOr(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "OR")
+  let srcEnc = expectReg(insn.args[1], "OR")
   if dstEnc.laneTag != srcEnc.laneTag:
-    return "OR operand width mismatch".err
+    raise newOperandWidthError("OR operand width mismatch")
   let value = decodeReg(vm, dstEnc) or decodeReg(vm, srcEnc)
   setArithFlags(vm, value, false, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"OR r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
 
-proc handleXor(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "XOR")
-  let srcEnc = ?expectReg(insn.args[1], "XOR")
+proc handleXor(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "XOR")
+  let srcEnc = expectReg(insn.args[1], "XOR")
   if dstEnc.laneTag != srcEnc.laneTag:
-    return "XOR operand width mismatch".err
+    raise newOperandWidthError("XOR operand width mismatch")
   let value = decodeReg(vm, dstEnc) xor decodeReg(vm, srcEnc)
   setArithFlags(vm, value, false, dstEnc.isLane)
   writeReg(vm, dstEnc, value)
   debug fmt"XOR r{dstEnc.index}, r{srcEnc.index} = 0x{value:04X}"
 
-proc handleNot(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "NOT")
+proc handleNot(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "NOT")
   let isLane = enc.isLane
   let mask = if isLane: ByteMask else: 0xFFFF'u16
   let value = (not decodeReg(vm, enc)) and mask
@@ -319,46 +318,45 @@ proc handleNot(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultO
   writeReg(vm, enc, value)
   debug fmt"NOT r{enc.index} = 0x{value:04X}"
 
-proc handleCmp(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "CMP")
-  let srcEnc = ?expectReg(insn.args[1], "CMP")
+proc handleCmp(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "CMP")
+  let srcEnc = expectReg(insn.args[1], "CMP")
   if dstEnc.laneTag != srcEnc.laneTag:
-    return "CMP operand width mismatch".err
+    raise newOperandWidthError("CMP operand width mismatch")
   let (value, carry) =
     subCore(decodeReg(vm, dstEnc), decodeReg(vm, srcEnc), dstEnc.isLane)
   setArithFlags(vm, value, carry, dstEnc.isLane)
   debug fmt"CMP r{dstEnc.index}, r{srcEnc.index} flags Z={vm.flags.zero} N={vm.flags.negative} C={vm.flags.carry}"
 
-proc handleCmpImm(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "CMPI")
-  let imm = ?expectImm(insn.args[1], "CMPI")
+proc handleCmpImm(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "CMPI")
+  let imm = expectImm(insn.args[1], "CMPI")
   let (value, carry) = subCore(decodeReg(vm, dstEnc), imm, dstEnc.isLane)
   setArithFlags(vm, value, carry, dstEnc.isLane)
   debug fmt"CMPI r{dstEnc.index}, 0x{imm:X} flags Z={vm.flags.zero} N={vm.flags.negative} C={vm.flags.carry}"
 
 # Jumps and subroutines
 
-proc pushWord(vm: var Vm, value: Word): FvmResult[void] =
+proc pushWord(vm: var Vm, value: Word) =
   if vm.sp <= 1'u16:
-    return "Stack overflow on CALL".err
+    raise newStackOverflowError("Stack overflow on CALL")
   vm.sp -= 2
-  ?vm.bus.write16(vm.sp, value)
-  ok()
+  vm.bus.write16(vm.sp, value)
 
-proc popWord(vm: var Vm): FvmResult[Word] =
+proc popWord(vm: var Vm): Word =
   if int(vm.sp) + 1 >= int(StackBase):
-    return "Stack underflow on RET".err
-  let value = ?vm.bus.read16(vm.sp)
+    raise newStackUnderflowError("Stack underflow on RET")
+  let value = vm.bus.read16(vm.sp)
   vm.sp += 2
-  value.ok
+  value
 
-proc handleJmp(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = Address(?expectImm16(insn.args[0], "JMP"))
+proc handleJmp(vm: var Vm, insn: DecodedInstruction) =
+  let target = Address(expectImm16(insn.args[0], "JMP"))
   debug fmt"JMP 0x{target:04X}"
   vm.ip = target
 
-proc handleJmpReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "JMP")
+proc handleJmpReg(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "JMP")
   let target = decodeReg(vm, enc)
   debug fmt"JMP r{enc.index} -> 0x{target:04X}"
   vm.ip = target
@@ -370,173 +368,172 @@ template conditionalJump(vm: var Vm, condition: bool, target: Address, name: str
   else:
     debug name & " not taken"
 
-proc handleJz(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = Address(?expectImm16(insn.args[0], "JZ"))
+proc handleJz(vm: var Vm, insn: DecodedInstruction) =
+  let target = Address(expectImm16(insn.args[0], "JZ"))
   conditionalJump(vm, vm.flags.zero, target, "JZ")
 
-proc handleJzReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "JZ")
+proc handleJzReg(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "JZ")
   let target = decodeReg(vm, enc)
   conditionalJump(vm, vm.flags.zero, target, "JZ")
 
-proc handleJnz(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = Address(?expectImm16(insn.args[0], "JNZ"))
+proc handleJnz(vm: var Vm, insn: DecodedInstruction) =
+  let target = Address(expectImm16(insn.args[0], "JNZ"))
   conditionalJump(vm, not vm.flags.zero, target, "JNZ")
 
-proc handleJnzReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "JNZ")
+proc handleJnzReg(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "JNZ")
   let target = decodeReg(vm, enc)
   conditionalJump(vm, not vm.flags.zero, target, "JNZ")
 
-proc handleJc(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = Address(?expectImm16(insn.args[0], "JC"))
+proc handleJc(vm: var Vm, insn: DecodedInstruction) =
+  let target = Address(expectImm16(insn.args[0], "JC"))
   conditionalJump(vm, vm.flags.carry, target, "JC")
 
-proc handleJcReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "JC")
+proc handleJcReg(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "JC")
   let target = decodeReg(vm, enc)
   conditionalJump(vm, vm.flags.carry, target, "JC")
 
-proc handleJn(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = Address(?expectImm16(insn.args[0], "JN"))
+proc handleJn(vm: var Vm, insn: DecodedInstruction) =
+  let target = Address(expectImm16(insn.args[0], "JN"))
   conditionalJump(vm, vm.flags.negative, target, "JN")
 
-proc handleJnReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "JN")
+proc handleJnReg(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "JN")
   let target = decodeReg(vm, enc)
   conditionalJump(vm, vm.flags.negative, target, "JN")
 
-proc handleCall(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = Address(?expectImm16(insn.args[0], "CALL"))
+proc handleCall(vm: var Vm, insn: DecodedInstruction) =
+  let target = Address(expectImm16(insn.args[0], "CALL"))
   let retAddr = vm.ip + Address(insn.size)
-  ?pushWord(vm, retAddr)
+  pushWord(vm, retAddr)
   debug fmt"CALL 0x{target:04X} (ret=0x{retAddr:04X})"
   vm.ip = target
 
 proc handleCallReg(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "CALL")
+)=
+  let enc = expectReg(insn.args[0], "CALL")
   let target = decodeReg(vm, enc)
   let retAddr = vm.ip + Address(insn.size)
-  ?pushWord(vm, retAddr)
+  pushWord(vm, retAddr)
   debug fmt"CALL r{enc.index} -> 0x{target:04X} (ret=0x{retAddr:04X})"
   vm.ip = target
 
-proc handleRet(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let target = ?popWord(vm)
+proc handleRet(vm: var Vm, insn: DecodedInstruction) =
+  let target = popWord(vm)
   debug fmt"RET -> 0x{target:04X}"
   vm.ip = target
 
 proc handleSieRegImm(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  ?requirePrivileged(vm, "SIE")
-  let indexEnc = ?expectReg(insn.args[0], "SIE")
-  let index = ?interruptIndex(decodeReg(vm, indexEnc))
-  let target = Address(?expectImm16(insn.args[1], "SIE"))
+)=
+  requirePrivileged(vm, "SIE")
+  let indexEnc = expectReg(insn.args[0], "SIE")
+  let index = interruptIndex(decodeReg(vm, indexEnc))
+  let target = Address(expectImm16(insn.args[1], "SIE"))
   vm.ivt[index] = target
   debug fmt"SIE r{indexEnc.index}, 0x{target:04X}"
 
 proc handleSieRegReg(
     vm: var Vm, insn: DecodedInstruction
-): FvmResult[void] {.defaultOk.} =
-  ?requirePrivileged(vm, "SIE")
-  let indexEnc = ?expectReg(insn.args[0], "SIE")
-  let targetEnc = ?expectReg(insn.args[1], "SIE")
-  let index = ?interruptIndex(decodeReg(vm, indexEnc))
+)=
+  requirePrivileged(vm, "SIE")
+  let indexEnc = expectReg(insn.args[0], "SIE")
+  let targetEnc = expectReg(insn.args[1], "SIE")
+  let index = interruptIndex(decodeReg(vm, indexEnc))
   let target = Address(decodeReg(vm, targetEnc))
   vm.ivt[index] = target
   debug fmt"SIE r{indexEnc.index}, r{targetEnc.index} -> 0x{target:04X}"
 
-proc handleIntImm(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let index = ?interruptIndex(Word(?expectImm8(insn.args[0], "INT")))
+proc handleIntImm(vm: var Vm, insn: DecodedInstruction) =
+  let index = interruptIndex(Word(expectImm8(insn.args[0], "INT")))
   let resumeIp = vm.ip + Address(insn.size)
   vm.ip = resumeIp
-  ?vm.raiseInterrupt(index)
+  vm.raiseInterrupt(index)
   debug fmt"INT 0x{index:02X}"
 
-proc handleIntReg(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "INT")
-  let index = ?interruptIndex(decodeReg(vm, enc))
+proc handleIntReg(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "INT")
+  let index = interruptIndex(decodeReg(vm, enc))
   let resumeIp = vm.ip + Address(insn.size)
   vm.ip = resumeIp
-  ?vm.raiseInterrupt(index)
+  vm.raiseInterrupt(index)
   debug fmt"INT r{enc.index} -> 0x{index:02X}"
 
-proc handleOut(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let port = ?expectImm8(insn.args[0], "OUT")
-  let enc = ?expectReg(insn.args[1], "OUT")
+proc handleOut(vm: var Vm, insn: DecodedInstruction) =
+  let port = expectImm8(insn.args[0], "OUT")
+  let enc = expectReg(insn.args[1], "OUT")
   let value = decodeReg(vm, enc)
   if enc.isLane:
-    ?vm.ports.portOut(port, Byte(value))
+    vm.ports.portOut(port, Byte(value))
     debug fmt"OUT port={port} r{enc.index}(lane) = 0x{value:02X}"
   else:
-    ?vm.ports.portOut(port, Byte((value shr 8) and ByteMask))
-    ?vm.ports.portOut(port, Byte(value and ByteMask))
+    vm.ports.portOut(port, Byte((value shr 8) and ByteMask))
+    vm.ports.portOut(port, Byte(value and ByteMask))
     debug fmt"OUT port={port} r{enc.index} = 0x{value:04X}"
 
-proc handleIn(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let enc = ?expectReg(insn.args[0], "IN")
-  let port = ?expectImm8(insn.args[1], "IN")
+proc handleIn(vm: var Vm, insn: DecodedInstruction) =
+  let enc = expectReg(insn.args[0], "IN")
+  let port = expectImm8(insn.args[1], "IN")
   if enc.isLane:
-    let value = ?vm.ports.portIn(port)
+    let value = vm.ports.portIn(port)
     writeReg(vm, enc, Word(value))
     debug fmt"IN r{enc.index}(lane) = 0x{value:02X} from port={port}"
   else:
-    let hi = ?vm.ports.portIn(port)
-    let lo = ?vm.ports.portIn(port)
+    let hi = vm.ports.portIn(port)
+    let lo = vm.ports.portIn(port)
     let value = (Word(hi) shl 8) or Word(lo)
     writeReg(vm, enc, value)
     debug fmt"IN r{enc.index} = 0x{value:04X} from port={port}"
 
 # Memory access
 
-proc handleLoad(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let dstEnc = ?expectReg(insn.args[0], "LOAD")
-  let addrEnc = ?expectReg(insn.args[1], "LOAD")
+proc handleLoad(vm: var Vm, insn: DecodedInstruction) =
+  let dstEnc = expectReg(insn.args[0], "LOAD")
+  let addrEnc = expectReg(insn.args[1], "LOAD")
   if addrEnc.isLane:
-    return "LOAD address register must be full-width".err
+    raise newAddressRegisterError("LOAD address register must be full-width")
   let address = Address(decodeReg(vm, addrEnc))
   if dstEnc.isLane:
-    let value = ?vm.bus.read8(address)
+    let value = vm.bus.read8(address)
     writeReg(vm, dstEnc, Word(value))
     debug fmt"LOAD r{dstEnc.index}(lane) = 0x{value:02X} from 0x{address:04X}"
   else:
-    let value = ?vm.bus.read16(address)
+    let value = vm.bus.read16(address)
     writeReg(vm, dstEnc, value)
     debug fmt"LOAD r{dstEnc.index} = 0x{value:04X} from 0x{address:04X}"
 
-proc handleStore(vm: var Vm, insn: DecodedInstruction): FvmResult[void] {.defaultOk.} =
-  let addrEnc = ?expectReg(insn.args[0], "STORE")
-  let srcEnc = ?expectReg(insn.args[1], "STORE")
+proc handleStore(vm: var Vm, insn: DecodedInstruction) =
+  let addrEnc = expectReg(insn.args[0], "STORE")
+  let srcEnc = expectReg(insn.args[1], "STORE")
   if addrEnc.isLane:
-    return "STORE address register must be full-width".err
+    raise newAddressRegisterError("STORE address register must be full-width")
   let address = Address(decodeReg(vm, addrEnc))
   if srcEnc.isLane:
     let value = Byte(decodeReg(vm, srcEnc))
-    ?vm.bus.write8(address, value)
+    vm.bus.write8(address, value)
     debug fmt"STORE 0x{address:04X} = 0x{value:02X} (byte)"
   else:
     let value = decodeReg(vm, srcEnc)
-    ?vm.bus.write16(address, value)
+    vm.bus.write16(address, value)
     debug fmt"STORE 0x{address:04X} = 0x{value:04X} (word)"
 
 # Reserved / unimplemented placeholders
 
-proc handleUnimplemented(vm: var Vm, insn: DecodedInstruction): FvmResult[void] =
-  ("Unimplemented opcode 0x" & toHex(int(vm.bus.mem[int(vm.ip)]), 2)).err
+proc handleUnimplemented(vm: var Vm, insn: DecodedInstruction) =
+  raise newUnimplementedOpcodeError(vm.bus.mem[int(vm.ip)])
 
-proc execute*(vm: var Vm, insn: DecodedInstruction): FvmResult[void] =
+proc execute*(vm: var Vm, insn: DecodedInstruction) =
   let def = getInstructionDef(insn.opcode)
   if def.handler == nil:
-    return ("No handler for opcode 0x" & toHex(ord(insn.opcode), 2)).err
+    raise newMissingHandlerError(insn.opcode)
 
   let startIp = vm.ip
-  ?def.handler(vm, insn)
+  def.handler(vm, insn)
   if vm.ip == startIp:
     vm.ip += Address(insn.size)
-  ok()
 
 # Instruction definition table
 

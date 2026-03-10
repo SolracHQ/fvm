@@ -7,23 +7,36 @@
 ## the VM tests independent from the assembler subsystem.
 
 import unittest
+import fvm/errors
 import fvm/assembler/assembler
 import fvm/vm/vm
 import fvm/vm/ports
 import fvm/format/fvmobject as fmtobject
 import fvm/core/constants
 
+template get(value: untyped): untyped =
+  block:
+    when compiles(
+      block:
+        let tmp = value
+        tmp
+    ):
+      let tmp = value
+      tmp
+    else:
+      value
+
 proc makeObj(code: seq[Byte]): FvmObject =
   FvmObject(version: FvmVersion, entryPoint: 0'u16, code: code)
 
 proc freshVm(code: seq[Byte]): Vm =
-  var vm = newVm().get()
-  vm.initRom(makeObj(code)).get()
+  var vm = newVm()
+  vm.initRom(makeObj(code))
   vm
 
 proc freshVm(obj: FvmObject): Vm =
-  var vm = newVm().get()
-  vm.initRom(obj).get()
+  var vm = newVm()
+  vm.initRom(obj)
   vm
 
 proc bytes(s: string): seq[Byte] =
@@ -32,58 +45,58 @@ proc bytes(s: string): seq[Byte] =
 
 suite "newVm":
   test "creates a halted=false VM":
-    let vm = newVm().get()
+    let vm = newVm()
     check not vm.halted
 
   test "all registers initialised to 0":
-    let vm = newVm().get()
+    let vm = newVm()
     for r in vm.regs:
       check r == 0
 
   test "ip starts at 0":
-    let vm = newVm().get()
+    let vm = newVm()
     check vm.ip == 0
 
 suite "initRom":
   test "loads bytecode at entry point 0":
-    var vm = newVm().get()
+    var vm = newVm()
     let obj = makeObj(@[Byte(ord(OpCode.Nop)), Byte(ord(OpCode.Halt))])
-    vm.initRom(obj).get()
+    vm.initRom(obj)
     check vm.bus.mem[0] == Byte(ord(OpCode.Nop))
     check vm.bus.mem[1] == Byte(ord(OpCode.Halt))
 
   test "sets ip to entryPoint":
-    var vm = newVm().get()
+    var vm = newVm()
     let obj = FvmObject(
       version: FvmVersion, entryPoint: 0x0010'u16, code: @[Byte(ord(OpCode.Halt))]
     )
-    vm.initRom(obj).get()
+    vm.initRom(obj)
     check vm.ip == 0x0010'u16
 
   test "program too large returns error":
-    var vm = newVm().get()
+    var vm = newVm()
     let bigCode = newSeq[Byte](VmMemorySize + 1)
     let obj = makeObj(bigCode)
-    let res = vm.initRom(obj)
-    check res.isErr
+    expect VmLayoutError:
+      vm.initRom(obj)
 
 suite "step - NOP":
   test "NOP advances ip by 1":
     var vm = freshVm(@[Byte(ord(OpCode.Nop)), Byte(ord(OpCode.Halt))])
-    vm.step().get()
+    vm.step()
     check vm.ip == 1
 
 suite "step - HALT":
   test "HALT sets halted flag":
     var vm = freshVm(@[Byte(ord(OpCode.Halt))])
-    vm.step().get()
+    vm.step()
     check vm.halted
 
 suite "step - MOV / PUSH / POP":
   test "MOV r0, 42 sets r0":
     var vm =
       freshVm(@[Byte(ord(OpCode.MovRegImm)), 0'u8, 0'u8, 42'u8, Byte(ord(OpCode.Halt))])
-    vm.step().get()
+    vm.step()
     check vm.regs[0] == 42
 
   test "PUSH r0 then POP r1 copies value":
@@ -100,7 +113,7 @@ suite "step - MOV / PUSH / POP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[1] == 0xAB
 
   test "MOV r0, r1 copies register":
@@ -116,14 +129,14 @@ suite "step - MOV / PUSH / POP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0x55
 
   test "MOV r0, 0x1234 stores 16-bit value":
     var vm = freshVm(
       @[Byte(ord(OpCode.MovRegImm)), 0'u8, 0x12'u8, 0x34'u8, Byte(ord(OpCode.Halt))]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0x1234
 
   test "MOV r0l writes low byte only leaving high byte intact":
@@ -140,18 +153,18 @@ suite "step - MOV / PUSH / POP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0x12AB
 
 suite "run":
   test "run stops on HALT":
     var vm = freshVm(@[Byte(ord(OpCode.Nop)), Byte(ord(OpCode.Halt))])
-    vm.run().get()
+    vm.run()
     check vm.halted
 
   test "invalid opcode raises interrupt and halts when unhandled":
     var vm = freshVm(@[0xFF'u8])
-    vm.run().get()
+    vm.run()
     check vm.halted
     check vm.ip == 1
 
@@ -176,7 +189,7 @@ suite "step - ADD":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 8
     check not vm.flags.carry
     check not vm.flags.zero
@@ -199,7 +212,7 @@ suite "step - ADD":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0x0000
     check vm.flags.carry
     check vm.flags.zero
@@ -219,7 +232,7 @@ suite "step - ADD":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check (vm.regs[0] and 0xFF'u16) == 0x00
     check vm.flags.carry
     check vm.flags.zero
@@ -241,7 +254,7 @@ suite "step - ADD":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.flags.zero
 
 suite "step - SUB":
@@ -262,7 +275,7 @@ suite "step - SUB":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 7
     check not vm.flags.carry
 
@@ -283,7 +296,7 @@ suite "step - SUB":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0xFFFE'u16
     check vm.flags.carry
 
@@ -304,7 +317,7 @@ suite "step - SUB":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0
     check vm.flags.zero
     check not vm.flags.carry
@@ -327,7 +340,7 @@ suite "step - AND/OR/XOR/NOT":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0x000F'u16
 
   test "OR r0, r1":
@@ -347,7 +360,7 @@ suite "step - AND/OR/XOR/NOT":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0xF00F'u16
 
   test "XOR r0 with itself zeroes register":
@@ -363,7 +376,7 @@ suite "step - AND/OR/XOR/NOT":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0
     check vm.flags.zero
 
@@ -379,7 +392,7 @@ suite "step - AND/OR/XOR/NOT":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0x00FF'u16
 
   test "NOT byte-lane":
@@ -393,7 +406,7 @@ suite "step - AND/OR/XOR/NOT":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check (vm.regs[0] and 0xFF'u16) == 0xF0'u16
 
 suite "step - CMP":
@@ -414,7 +427,7 @@ suite "step - CMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.flags.zero
     check not vm.flags.carry
     check vm.regs[0] == 0x000A'u16 # not modified
@@ -436,7 +449,7 @@ suite "step - CMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.flags.carry
     check not vm.flags.zero
     check vm.regs[0] == 0x0003'u16 # unchanged
@@ -456,20 +469,18 @@ suite "step - OUT":
       ]
     )
 
-    vm.ports
-    .registerPort(
+    vm.ports.registerPort(
       0,
       PortDevice(
         label: "capture",
-        read: proc(): FvmResult[Byte] =
-          Byte(0).ok,
-        write: proc(v: Byte): FvmResult[void] =
-          captured.add(v)
-          ok(),
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
       ),
     )
-    .get()
-    vm.run().get()
+
+    vm.run()
     check captured == @[0xAB'u8]
 
   test "OUT word sends hi then lo byte":
@@ -487,20 +498,18 @@ suite "step - OUT":
       ]
     )
 
-    vm.ports
-    .registerPort(
+    vm.ports.registerPort(
       0,
       PortDevice(
         label: "capture",
-        read: proc(): FvmResult[Byte] =
-          Byte(0).ok,
-        write: proc(v: Byte): FvmResult[void] =
-          captured.add(v)
-          ok(),
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
       ),
     )
-    .get()
-    vm.run().get()
+
+    vm.run()
     check captured == @[0x12'u8, 0x34'u8]
 
 suite "step - IN":
@@ -514,19 +523,18 @@ suite "step - IN":
       ]
     )
 
-    vm.ports
-    .registerPort(
+    vm.ports.registerPort(
       0,
       PortDevice(
         label: "provide",
-        read: proc(): FvmResult[Byte] =
-          Byte(0xCD).ok,
-        write: proc(v: Byte): FvmResult[void] =
-          ok(),
+        read: proc(): Byte =
+          Byte(0xCD),
+        write: proc(v: Byte): void =
+          discard,
       ),
     )
-    .get()
-    vm.run().get()
+
+    vm.run()
     check (vm.regs[0] and 0xFF'u16) == 0xCD'u16
 
   test "IN word assembles hi then lo from port":
@@ -540,20 +548,19 @@ suite "step - IN":
       ]
     )
 
-    vm.ports
-    .registerPort(
+    vm.ports.registerPort(
       0,
       PortDevice(
         label: "provide",
-        read: proc(): FvmResult[Byte] =
+        read: proc(): Byte =
           inc counter
-          (if counter == 1: Byte(0xAB) else: Byte(0xCD)).ok,
-        write: proc(v: Byte): FvmResult[void] =
-          ok(),
+          (if counter == 1: Byte(0xAB) else: Byte(0xCD)),
+        write: proc(v: Byte): void =
+          discard,
       ),
     )
-    .get()
-    vm.run().get()
+
+    vm.run()
     check vm.regs[0] == 0xABCD'u16
 
 suite "step - JMP":
@@ -574,7 +581,7 @@ suite "step - JMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == 0
 
   test "JNZ taken (zero=false) skips fall-through":
@@ -603,7 +610,7 @@ suite "step - JMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[2] == 0
 
   test "JNZ not taken (zero=true) continues":
@@ -627,7 +634,7 @@ suite "step - JMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[2] == 0xFF
 
   test "JZ taken (zero=true) skips fall-through":
@@ -651,7 +658,7 @@ suite "step - JMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[1] == 0
 
   test "JZ not taken (zero=false) continues":
@@ -680,7 +687,7 @@ suite "step - JMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[2] == 0xAB
 
   test "JmpReg (indirect) jumps to address in register":
@@ -706,7 +713,7 @@ suite "step - JMP":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.regs[1] == 0
 
 suite "step - CALL / RET":
@@ -733,7 +740,7 @@ suite "step - CALL / RET":
         Byte(ord(OpCode.Ret)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check (vm.regs[0] and 0xFF'u16) == 0xAB
     check vm.regs[1] == 0xFF
 
@@ -772,7 +779,7 @@ suite "step - CALL / RET":
         Byte(ord(OpCode.Ret)),
       ]
     )
-    vm.run().get()
+    vm.run()
     # inner set r0l=0xAA, outer then set r0l=0xBB
     check (vm.regs[0] and 0xFF'u16) == 0xBB
 
@@ -781,7 +788,7 @@ suite "step - SP register":
     # sp starts at StackBase (0xFFFF); MovRegReg with src=SpEncoding (0x40)
     var vm =
       freshVm(@[Byte(ord(OpCode.MovRegReg)), 0x00'u8, 0x40'u8, Byte(ord(OpCode.Halt))])
-    vm.run().get()
+    vm.run()
     check vm.regs[0] == StackBase
 
   test "MOV sp, r0 writes stack pointer":
@@ -797,7 +804,7 @@ suite "step - SP register":
         Byte(ord(OpCode.Halt)),
       ]
     )
-    vm.run().get()
+    vm.run()
     check vm.sp == 0x1234'u16
 
 suite "interrupts":
@@ -824,20 +831,18 @@ suite "interrupts":
         Byte(ord(OpCode.Iret)),
       ]
     )
-    vm.ports
-      .registerPort(
-        0,
-        PortDevice(
-          label: "capture",
-          read: proc(): FvmResult[Byte] =
-            Byte(0).ok,
-          write: proc(v: Byte): FvmResult[void] =
-            captured.add(v)
-            ok(),
-        ),
-      )
-      .get()
-    vm.run().get()
+    vm.ports.registerPort(
+      0,
+      PortDevice(
+        label: "capture",
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
+      ),
+    )
+
+    vm.run()
     check captured == @[Byte('L')]
     check vm.halted
 
@@ -865,20 +870,18 @@ suite "interrupts":
         Byte(ord(OpCode.Iret)),
       ]
     )
-    vm.ports
-      .registerPort(
-        0,
-        PortDevice(
-          label: "capture",
-          read: proc(): FvmResult[Byte] =
-            Byte(0).ok,
-          write: proc(v: Byte): FvmResult[void] =
-            captured.add(v)
-            ok(),
-        ),
-      )
-      .get()
-    vm.run().get()
+    vm.ports.registerPort(
+      0,
+      PortDevice(
+        label: "capture",
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
+      ),
+    )
+
+    vm.run()
     check captured == @[Byte('S')]
     check vm.halted
     check not vm.inInterrupt
@@ -906,20 +909,18 @@ suite "interrupts":
         Byte(ord(OpCode.Iret)),
       ]
     )
-    vm.ports
-      .registerPort(
-        0,
-        PortDevice(
-          label: "capture",
-          read: proc(): FvmResult[Byte] =
-            Byte(0).ok,
-          write: proc(v: Byte): FvmResult[void] =
-            captured.add(v)
-            ok(),
-        ),
-      )
-      .get()
-    vm.run().get()
+    vm.ports.registerPort(
+      0,
+      PortDevice(
+        label: "capture",
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
+      ),
+    )
+
+    vm.run()
     check captured == @[Byte('I')]
     check vm.halted
 
@@ -950,20 +951,18 @@ suite "interrupts":
         Byte(ord(OpCode.Iret)),
       ]
     )
-    vm.ports
-      .registerPort(
-        0,
-        PortDevice(
-          label: "capture",
-          read: proc(): FvmResult[Byte] =
-            Byte(0).ok,
-          write: proc(v: Byte): FvmResult[void] =
-            captured.add(v)
-            ok(),
-        ),
-      )
-      .get()
-    vm.run().get()
+    vm.ports.registerPort(
+      0,
+      PortDevice(
+        label: "capture",
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
+      ),
+    )
+
+    vm.run()
     check captured == @[Byte('P')]
     check not vm.privileged
 
@@ -991,41 +990,38 @@ suite "interrupts":
         Byte(ord(OpCode.Iret)),
       ]
     )
-    vm.ports
-      .registerPort(
-        0,
-        PortDevice(
-          label: "capture",
-          read: proc(): FvmResult[Byte] =
-            Byte(0).ok,
-          write: proc(v: Byte): FvmResult[void] =
-            captured.add(v)
-            ok(),
-        ),
-      )
-      .get()
-    vm.run().get()
+    vm.ports.registerPort(
+      0,
+      PortDevice(
+        label: "capture",
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
+      ),
+    )
+
+    vm.run()
     check captured == @[Byte('N')]
     check vm.halted
 
   test "interrupt example assembles and runs":
     var captured: seq[Byte]
     var vm = freshVm(assembleFile("examples/interrupts.fa").get())
-    vm.ports
-      .registerPort(
-        0,
-        PortDevice(
-          label: "capture",
-          read: proc(): FvmResult[Byte] =
-            Byte(0).ok,
-          write: proc(v: Byte): FvmResult[void] =
-            captured.add(v)
-            ok(),
-        ),
-      )
-      .get()
-    vm.run().get()
-    check captured == bytes(
-      "software interrupt ok\n" & "bus fault: unmapped read below stack\n" &
-      "stack underflow: POP on empty stack\n"
+    vm.ports.registerPort(
+      0,
+      PortDevice(
+        label: "capture",
+        read: proc(): Byte =
+          Byte(0),
+        write: proc(v: Byte): void =
+          captured.add(v),
+      ),
     )
+
+    vm.run()
+    check captured ==
+      bytes(
+        "software interrupt ok\n" & "bus fault: unmapped read below stack\n" &
+          "stack underflow: POP on empty stack\n"
+      )

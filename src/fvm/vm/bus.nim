@@ -21,13 +21,14 @@ import std/strutils
 
 import ../core/types as coretypes
 import ../core/constants as coreconst
+import ../errors
 
 export coretypes, coreconst ## Re-export shared bus-visible core declarations
-export errors ## Re-export so callers get FvmResult without a separate import
+export errors
 
 type
-  DeviceRead* = proc(address: Address): FvmResult[Byte] {.closure.}
-  DeviceWrite* = proc(address: Address, value: Byte): FvmResult[void] {.closure.}
+  DeviceRead* = proc(address: Address): Byte {.closure.}
+  DeviceWrite* = proc(address: Address, value: Byte) {.closure.}
 
   MemRegion* = object
     base*: Address
@@ -53,17 +54,16 @@ proc overlaps(a, b: MemRegion): bool =
   let bEnd = uint32(b.base) + b.size
   not (aEnd <= uint32(b.base) or bEnd <= uint32(a.base))
 
-proc mapRegion*(bus: var Bus, region: MemRegion): FvmResult[void] =
+proc mapRegion*(bus: var Bus, region: MemRegion) =
   ## Registers a memory region on the bus.
   ## Returns an error if the new region overlaps an existing one.
   for existing in bus.regions:
     if overlaps(existing, region):
-      return (
+      raise newVmLayoutError(
         "Bus region '" & region.label & "' at 0x" & toHex(int(region.base), 4) &
         " overlaps existing region '" & existing.label & "'"
-      ).err
+      )
   bus.regions.add(region)
-  ok()
 
 proc findRegion(bus: Bus, address: Address): int =
   ## Returns the index of the region that contains `address`, or -1.
@@ -104,68 +104,66 @@ proc deviceRegion*(
 
 # Read / Write API
 
-proc read8*(bus: Bus, address: Address): FvmResult[Byte] =
+proc read8*(bus: Bus, address: Address): Byte =
   let idx = findRegion(bus, address)
   if idx < 0:
-    return ("Bus read at unmapped address 0x" & toHex(int(address), 4)).err
+    raise newBusFaultError("Bus read at unmapped address 0x" & toHex(int(address), 4))
   let region = bus.regions[idx]
   if Read notin region.permissions:
-    return (
+    raise newBusFaultError(
       "Bus read from non-readable region '" & region.label & "' at 0x" &
       toHex(int(address), 4)
-    ).err
+    )
   if region.hasDevice:
     return region.deviceRead(address)
-  bus.mem[int(address)].ok
+  bus.mem[int(address)]
 
-proc write8*(bus: var Bus, address: Address, value: Byte): FvmResult[void] =
+proc write8*(bus: var Bus, address: Address, value: Byte) =
   let idx = findRegion(bus, address)
   if idx < 0:
-    return ("Bus write at unmapped address 0x" & toHex(int(address), 4)).err
+    raise newBusFaultError("Bus write at unmapped address 0x" & toHex(int(address), 4))
   let region = bus.regions[idx]
   if Write notin region.permissions:
-    return (
+    raise newBusFaultError(
       "Bus write to read-only region '" & region.label & "' at 0x" &
       toHex(int(address), 4)
-    ).err
+    )
   if region.hasDevice:
-    return region.deviceWrite(address, value)
+    region.deviceWrite(address, value)
+    return
   bus.mem[int(address)] = value
-  ok()
 
-proc fetch8*(bus: Bus, address: Address): FvmResult[Byte] =
+proc fetch8*(bus: Bus, address: Address): Byte =
   ## Opcode fetch: requires the Execute permission in addition to Read.
   let idx = findRegion(bus, address)
   if idx < 0:
-    return ("Bus fetch at unmapped address 0x" & toHex(int(address), 4)).err
+    raise newBusFaultError("Bus fetch at unmapped address 0x" & toHex(int(address), 4))
   let region = bus.regions[idx]
   if Execute notin region.permissions:
-    return (
+    raise newBusFaultError(
       "Bus fetch from non-executable region '" & region.label & "' at 0x" &
       toHex(int(address), 4)
-    ).err
+    )
   if region.hasDevice:
     return region.deviceRead(address)
-  bus.mem[int(address)].ok
+  bus.mem[int(address)]
 
-proc read16*(bus: Bus, address: Address): FvmResult[Word] =
+proc read16*(bus: Bus, address: Address): Word =
   ## Big-endian 16-bit read.
-  let hi = ?bus.read8(address)
-  let lo = ?bus.read8(Address(uint32(address) + 1))
-  ((Word(hi) shl 8) or Word(lo)).ok
+  let hi = bus.read8(address)
+  let lo = bus.read8(Address(uint32(address) + 1))
+  (Word(hi) shl 8) or Word(lo)
 
-proc write16*(bus: var Bus, address: Address, value: Word): FvmResult[void] =
+proc write16*(bus: var Bus, address: Address, value: Word) =
   ## Big-endian 16-bit write.
-  ?bus.write8(address, Byte((value shr 8) and ByteMask))
-  ?bus.write8(Address(uint32(address) + 1), Byte(value and ByteMask))
-  ok()
+  bus.write8(address, Byte((value shr 8) and ByteMask))
+  bus.write8(Address(uint32(address) + 1), Byte(value and ByteMask))
 
-proc writeRange*(bus: var Bus, base: Address, data: openArray[Byte]): FvmResult[void] =
+proc writeRange*(bus: var Bus, base: Address, data: openArray[Byte]) =
   ## Bulk-write a byte sequence starting at `base`.  Goes through `write8` so
   ## permission checks apply; use `writeRangeDirect` for loader initialization.
   for i, b in data:
-    ?bus.write8(Address(uint32(base) + uint32(i)), b)
-  ok()
+    bus.write8(Address(uint32(base) + uint32(i)), b)
 
 proc writeRangeDirect*(bus: var Bus, base: Address, data: openArray[Byte]) =
   ## Writes bytes directly into the backing array without permission checks.

@@ -4,12 +4,13 @@ import ./bus
 import ../core/types as coretypes
 import ../core/constants as coreconst
 import ../core/flags as coreflags
+import ../errors
 
 export bus, coretypes, coreconst, coreflags, errors
 
 type
-  PortRead* = proc(): FvmResult[Byte] {.closure.} ## Reads one byte from a port device.
-  PortWrite* = proc(value: Byte): FvmResult[void] {.closure.}
+  PortRead* = proc(): Byte {.closure.} ## Reads one byte from a port device.
+  PortWrite* = proc(value: Byte) {.closure.}
     ## Writes one byte to a port device.
 
   InterruptContext* = object
@@ -41,12 +42,12 @@ type
     halted*: bool ## Halt latch set by HALT.
     ports*: Ports ## Registered I/O ports.
 
-  HandlerProc* = proc(vm: var Vm, insn: DecodedInstruction): FvmResult[void]
+  HandlerProc* = proc(vm: var Vm, insn: DecodedInstruction)
     ## Executes one decoded instruction.
 
   InstructionDef* = object ## Executor dispatch entry for one opcode.
     mnemonic*: string ## Human-readable mnemonic.
     handler*: HandlerProc ## Execute-stage procedure for the opcode.
 
-  DecoderProc* = proc(vm: Vm, opcode: OpCode): FvmResult[DecodedInstruction]
+  DecoderProc* = proc(vm: Vm, opcode: OpCode): DecodedInstruction
     ## Decodes operands for one opcode from the current IP.

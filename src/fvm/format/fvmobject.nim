@@ -17,6 +17,7 @@
 
 import ../core/types as coretypes
 import ../core/constants as coreconst
+import ../errors
 
 export
   coretypes, coreconst ## re-export so importers can use core object primitives directly
@@ -68,22 +69,23 @@ proc serialize*(obj: FvmObject): seq[Byte] =
 
 # Deserialization
 
-proc deserialize*(data: openArray[Byte]): FvmResult[FvmObject] =
+proc deserialize*(data: openArray[Byte]): FvmObject =
   ## Validates and decodes a raw byte sequence into an FvmObject.
   if data.len < FvmHeaderSize:
-    return (
+    raise newObjectFormatError(
       "FVM object too short: expected at least " & $FvmHeaderSize & " bytes, got " &
       $data.len
-    ).err
+    )
 
   if data[0] != FvmMagic[0] or data[1] != FvmMagic[1] or data[2] != FvmMagic[2] or
       data[3] != FvmMagic[3]:
-    return "Invalid FVM magic bytes".err
+    raise newObjectFormatError("Invalid FVM magic bytes")
 
   let version = data[4]
   if version != FvmVersion:
-    return
-      ("Unsupported FVM version: " & $version & " (expected " & $FvmVersion & ")").err
+    raise newObjectFormatError(
+      "Unsupported FVM version: " & $version & " (expected " & $FvmVersion & ")"
+    )
 
   let entryPoint = Address((uint16(data[5]) shl 8) or uint16(data[6]))
   let rodataLen = int((uint16(data[7]) shl 8) or uint16(data[8]))
@@ -93,10 +95,10 @@ proc deserialize*(data: openArray[Byte]): FvmResult[FvmObject] =
   let totalPayload = rodataLen + codeLen + dataLen
 
   if data.len < FvmHeaderSize + totalPayload + (relocCount * 2):
-    return (
+    raise newObjectFormatError(
       "FVM object truncated: header declares " & $totalPayload & " payload bytes and " &
       $relocCount & " relocations but insufficient data present"
-    ).err
+    )
 
   let rodataStart = FvmHeaderSize
   let codeStart = rodataStart + rodataLen
@@ -116,4 +118,4 @@ proc deserialize*(data: openArray[Byte]): FvmResult[FvmObject] =
     code: @(data[codeStart ..< dataStart]),
     data: @(data[dataStart ..< relocStart]),
     relocations: relocations,
-  ).ok
+  )

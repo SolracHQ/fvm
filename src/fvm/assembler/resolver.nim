@@ -3,6 +3,7 @@ import ./mapper
 import ../core/types
 import ../core/constants
 import ../core/registers
+import ../errors
 
 import std/tables
 
@@ -113,23 +114,23 @@ const opcodeTable = block:
 
 proc resolveArg(
     arg: Arg, srcMap: SourceMap, currentGlobal: string
-): FvmResult[FlatArg] =
+): FlatArg =
   case arg.kind
   of akReg:
-    FlatArg(kind: faReg, enc: arg.reg.enc).ok
+    FlatArg(kind: faReg, enc: arg.reg.enc)
   of akImm:
     if arg.imm.value > 0xFF:
-      FlatArg(kind: faImm16, imm16: arg.imm.value).ok
+      FlatArg(kind: faImm16, imm16: arg.imm.value)
     else:
-      FlatArg(kind: faImm8, imm8: Byte(arg.imm.value)).ok
+      FlatArg(kind: faImm8, imm8: Byte(arg.imm.value))
   of akLabelRef:
     let name = qualifyLabel(arg.lbl.raw, currentGlobal)
     if name notin srcMap.labels:
-      return (
+      raise newAssemblyResolveError(
         "Undefined label: " & arg.lbl.raw & " at line " & $arg.line & ":" & $arg.col
-      ).err
+      , arg.line, arg.col)
     # Labels in the map carry absolute VM addresses (see mapper note).
-    FlatArg(kind: faImm16, imm16: srcMap.labels[name]).ok
+    FlatArg(kind: faImm16, imm16: srcMap.labels[name])
 
 proc resolveInstruction(
     node: Node,
@@ -138,12 +139,12 @@ proc resolveInstruction(
     srcMap: SourceMap,
     currentGlobal: string,
     relocations: var seq[uint16],
-): FvmResult[FlatNode] =
+  ): FlatNode =
   var flatArgs: seq[FlatArg]
   var hasReloc = false
 
   for arg in node.args:
-    let flat = ?resolveArg(arg, srcMap, currentGlobal)
+    let flat = resolveArg(arg, srcMap, currentGlobal)
     if arg.kind == akLabelRef:
       hasReloc = true
       if section == secCode:
@@ -164,10 +165,10 @@ proc resolveInstruction(
 
   let key = opcodeKey(node.mnemonic, flatArgs)
   if key notin opcodeTable:
-    return (
+    raise newAssemblyResolveError(
       "No opcode for " & node.mnemonic & " with operands " & key & " at line " &
       $node.line & ":" & $node.col
-    ).err
+    , node.line, node.col)
 
   FlatNode(
     line: node.line,
@@ -178,7 +179,7 @@ proc resolveInstruction(
     opcode: opcodeTable[key],
     args: flatArgs,
     relocate: hasReloc,
-  ).ok
+  )
 
 proc flattenDataNode(node: Node, nodeAddr: uint16, section: SectionKind): FlatNode =
   var bytes: seq[Byte]
@@ -206,7 +207,7 @@ proc flattenDataNode(node: Node, nodeAddr: uint16, section: SectionKind): FlatNo
 
 # Resolve entry point
 
-proc resolve*(nodes: seq[Node], srcMap: SourceMap): FvmResult[ResolvedProgram] =
+proc resolve*(nodes: seq[Node], srcMap: SourceMap): ResolvedProgram =
   var program: ResolvedProgram
   var section = secCode
   var currentGlobal = ""
@@ -222,10 +223,10 @@ proc resolve*(nodes: seq[Node], srcMap: SourceMap): FvmResult[ResolvedProgram] =
     of nkInstruction:
       let base = sectionBase(srcMap.sizes, section)
       let nodeAddr = base + codeOff
-      let flat = ?resolveInstruction(
+      let flat = resolveInstruction(
         node, nodeAddr, section, srcMap, currentGlobal, program.relocations
       )
-      codeOff += uint16(?estimateSize(node.mnemonic, node.args))
+      codeOff += uint16(estimateSize(node.mnemonic, node.args))
       program.nodes.add(flat)
     of nkDb, nkDw:
       let base = sectionBase(srcMap.sizes, section)
@@ -252,4 +253,4 @@ proc resolve*(nodes: seq[Node], srcMap: SourceMap): FvmResult[ResolvedProgram] =
     else:
       codeBase
 
-  program.ok
+  program

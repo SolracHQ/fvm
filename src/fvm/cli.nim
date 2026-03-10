@@ -4,6 +4,7 @@ import std/os
 
 import ./assembler/assembler
 import ./cli/portmap
+import ./errors
 import ./format/fvmobject
 import ./vm/vm
 import ./vm/debug as vmdbg
@@ -11,57 +12,52 @@ import ./logger
 
 # Shared helpers
 
-proc setupVm(obj: FvmObject, maps: seq[string]): FvmResult[Vm] =
-  var vm = ?newVm()
-  ?vm.ports.applyMaps(maps)
-  ?vm.initRom(obj)
-  vm.ok
+proc setupVm(obj: FvmObject, maps: seq[string]): Vm =
+  var vm = newVm()
+  vm.ports.applyMaps(maps)
+  vm.initRom(obj)
+  vm
 
 proc execVm(vm: var Vm, step: bool): int =
-  if step:
-    while not vm.halted:
-      info formatIp(vm) & "  " & formatRegisters(vm) & "  " & formatFlags(vm)
-      let res = vm.step()
-      if res.isErr:
-        error "VM error: " & res.error
-        return 1
-  else:
-    let res = vm.run()
-    if res.isErr:
-      error "VM error: " & res.error
-      return 1
+  try:
+    if step:
+      while not vm.halted:
+        info formatIp(vm) & "  " & formatRegisters(vm) & "  " & formatFlags(vm)
+        vm.step()
+    else:
+      vm.run()
+  except FvmError as e:
+    error "VM error: " & e.msg
+    return 1
   0
 
 proc loadAndRun(
     obj: FvmObject, maps: seq[string], debugLevel: string, step: bool
 ): int =
-  var vm = block:
-    let r = setupVm(obj, maps)
-    if r.isErr:
-      error r.error
-      return 1
-    r.get()
+  var vm: Vm
+  try:
+    vm = setupVm(obj, maps)
+  except FvmError as e:
+    error e.msg
+    return 1
   execVm(vm, step)
 
 # Commands
 
 proc assemble*(source: string, output = "", debugLevel = "lvlInfo"): int =
   ## Assembles a .fa source file into a .fo object file.
-  let loggerResult = initLogger(debugLevel)
-  if loggerResult.isErr:
-    error loggerResult.error
-    return 1
-  let res = assembleFile(source)
-  if res.isErr:
-    error "Assembler error: " & res.error
-    return 1
-  let outPath =
-    if output.len > 0:
-      output
-    else:
-      source.changeFileExt("fo")
   try:
-    writeFile(outPath, cast[string](res.get().serialize()))
+    initLogger(debugLevel)
+    let obj = assembleFile(source)
+    let outPath =
+      if output.len > 0:
+        output
+      else:
+        source.changeFileExt("fo")
+    writeFile(outPath, cast[string](obj.serialize()))
+  except FvmError as e:
+    error e.msg
+    return 1
   except IOError as e:
     error "Write error: " & e.msg
     return 1
@@ -71,36 +67,27 @@ proc run*(
     objectFile: string, map: seq[string] = @[], debugLevel = "lvlInfo", step = false
 ): int =
   ## Runs a .fo object file.
-  let loggerResult = initLogger(debugLevel)
-  if loggerResult.isErr:
-    error loggerResult.error
-    return 1
-  let bytes =
+  let obj =
     try:
-      cast[seq[Byte]](readFile(objectFile))
+      initLogger(debugLevel)
+      deserialize(cast[seq[Byte]](readFile(objectFile)))
+    except FvmError as e:
+      error e.msg
+      return 1
     except IOError as e:
       error "Read error: " & e.msg
       return 1
-  let obj = block:
-    let r = deserialize(bytes)
-    if r.isErr:
-      error "Object error: " & r.error
-      return 1
-    r.get()
   loadAndRun(obj, map, debugLevel, step)
 
 proc runAsm*(
     source: string, map: seq[string] = @[], debugLevel = "lvlError", step = false
 ): int =
   ## Assembles a .fa source file and runs it without writing an object file.
-  let loggerResult = initLogger(debugLevel)
-  if loggerResult.isErr:
-    error loggerResult.error
-    return 1
-  let obj = block:
-    let r = assembleFile(source)
-    if r.isErr:
-      error "Assembler error: " & r.error
+  let obj =
+    try:
+      initLogger(debugLevel)
+      assembleFile(source)
+    except FvmError as e:
+      error e.msg
       return 1
-    r.get()
   loadAndRun(obj, map, debugLevel, step)

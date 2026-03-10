@@ -4,6 +4,7 @@ import std/strutils
 import std/tables
 
 import ../core/types
+import ../errors
 import ../vm/ports
 import ../vm/devices/zero
 import ../vm/devices/hexfile
@@ -25,11 +26,11 @@ type
     mode*: MapMode
     repr*: MapRepr
 
-proc parseMapSpec*(raw: string): FvmResult[MapSpec] =
+proc parseMapSpec*(raw: string): MapSpec =
   ## Parses `port:path:mode:repr` into a structured map specification.
   let parts = raw.split(':')
   if parts.len < 1 or parts.len > 4:
-    return ("Invalid --map spec, expected port:path:mode:repr, got: " & raw).err
+    raise newCliError("Invalid --map spec, expected port:path:mode:repr, got: " & raw)
 
   let portVal =
     try:
@@ -37,7 +38,7 @@ proc parseMapSpec*(raw: string): FvmResult[MapSpec] =
     except ValueError:
       -1
   if portVal < 0 or portVal > 255:
-    return ("Invalid port in --map spec: " & parts[0]).err
+    raise newCliError("Invalid port in --map spec: " & parts[0])
 
   let path =
     if parts.len >= 2:
@@ -55,7 +56,7 @@ proc parseMapSpec*(raw: string): FvmResult[MapSpec] =
       of "both":
         modeBoth
       else:
-        return ("Invalid mode in --map spec: " & parts[2]).err
+        raise newCliError("Invalid mode in --map spec: " & parts[2])
     else:
       modeBoth
 
@@ -69,108 +70,106 @@ proc parseMapSpec*(raw: string): FvmResult[MapSpec] =
       of "dec":
         reprDec
       else:
-        return ("Invalid repr in --map spec: " & parts[3]).err
+        raise newCliError("Invalid repr in --map spec: " & parts[3])
     else:
       reprRaw
 
-  MapSpec(port: Byte(portVal), path: path, mode: mode, repr: repr).ok
+  MapSpec(port: Byte(portVal), path: path, mode: mode, repr: repr)
 
-proc resolveInStream(path: string): FvmResult[File] =
+proc resolveInStream(path: string): File =
   ## Opens an input stream for the requested path or stdin alias.
   if path == "" or path == "stdin":
-    return stdin.ok
+    return stdin
   try:
-    open(path, fmRead).ok
+    open(path, fmRead)
   except IOError as e:
-    e.msg.err
+    raise newCliError(e.msg)
 
-proc resolveOutStream(path: string): FvmResult[File] =
+proc resolveOutStream(path: string): File =
   ## Opens an output stream for the requested path or stdio alias.
   if path == "" or path == "stdout":
-    return stdout.ok
+    return stdout
   if path == "stderr":
-    return stderr.ok
+    return stderr
   try:
-    open(path, fmWrite).ok
+    open(path, fmWrite)
   except IOError as e:
-    e.msg.err
+    raise newCliError(e.msg)
 
 proc rawRead(stream: File): PortRead =
   ## Creates a raw byte reader backed by a stream.
-  proc(): FvmResult[Byte] =
+  proc(): Byte =
     var buf: array[1, char]
     if stream.readChars(buf) == 0:
-      return "EOF on port read".err
-    Byte(buf[0]).ok
+      raise newPortEofError()
+    Byte(buf[0])
 
 proc rawWrite(stream: File): PortWrite =
   ## Creates a raw byte writer backed by a stream.
-  proc(value: Byte): FvmResult[void] =
+  proc(value: Byte) =
     try:
       stream.write(char(value))
       stream.flushFile()
-      ok()
     except IOError as e:
-      e.msg.err
+      raise newPortIoError(e.msg)
 
 proc decRead(stream: File): PortRead =
   ## Creates a decimal text reader backed by a stream.
-  proc(): FvmResult[Byte] =
+  proc(): Byte =
     try:
       let line = stream.readLine().strip()
       if line.len == 0:
-        return "EOF on port read".err
+        raise newPortEofError()
       let value = parseInt(line)
       if value < 0 or value > 255:
-        return ("Dec input out of byte range: " & line).err
-      Byte(value).ok
+        raise newPortValueError("Dec input out of byte range: " & line)
+      Byte(value)
     except EOFError:
-      "EOF on port read".err
+      raise newPortEofError()
     except ValueError as e:
-      ("Bad decimal input on port read: " & e.msg).err
+      raise newPortValueError("Bad decimal input on port read: " & e.msg)
 
 proc decWrite(stream: File): PortWrite =
   ## Creates a decimal text writer backed by a stream.
-  proc(value: Byte): FvmResult[void] =
+  proc(value: Byte) =
     try:
       stream.write($int(value) & "\n")
       stream.flushFile()
-      ok()
     except IOError as e:
-      e.msg.err
+      raise newPortIoError(e.msg)
 
-proc inputProc(spec: MapSpec): FvmResult[PortRead] =
+proc inputProc(spec: MapSpec): PortRead =
   ## Builds the input side of a port mapping from one map specification.
-  let stream = ?resolveInStream(spec.path)
+  let stream = resolveInStream(spec.path)
   case spec.repr
   of reprRaw:
-    rawRead(stream).ok
+    rawRead(stream)
   of reprHex:
-    hexFileRead(stream).ok
+    hexFileRead(stream)
   of reprDec:
-    decRead(stream).ok
+    decRead(stream)
 
-proc outputProc(spec: MapSpec): FvmResult[PortWrite] =
+proc outputProc(spec: MapSpec): PortWrite =
   ## Builds the output side of a port mapping from one map specification.
-  let stream = ?resolveOutStream(spec.path)
+  let stream = resolveOutStream(spec.path)
   case spec.repr
   of reprRaw:
-    rawWrite(stream).ok
+    rawWrite(stream)
   of reprHex:
-    hexFileWrite(stream).ok
+    hexFileWrite(stream)
   of reprDec:
-    decWrite(stream).ok
+    decWrite(stream)
 
-proc buildDevices*(specs: seq[MapSpec]): FvmResult[Table[Byte, PortDevice]] =
+proc buildDevices*(specs: seq[MapSpec]): Table[Byte, PortDevice] =
   ## Merges CLI map specifications into concrete port devices.
   var reads: Table[Byte, PortRead]
   var writes: Table[Byte, PortWrite]
 
   for spec in specs:
     if spec.mode in {modeIn, modeBoth}:
-      reads[spec.port] = ?inputProc(spec)
+      reads[spec.port] = inputProc(spec)
     if spec.mode in {modeOut, modeBoth}:
-      writes[spec.port] = ?outputProc(spec)
+      writes[spec.port] = outputProc(spec)
 
   var devices: Table[Byte, PortDevice]
   var allPorts: seq[Byte]
@@ -194,14 +193,13 @@ proc buildDevices*(specs: seq[MapSpec]): FvmResult[Table[Byte, PortDevice]] =
     devices[port] =
       PortDevice(label: "mapped-port-" & $port, read: readProc, write: writeProc)
 
-  devices.ok
+  devices
 
-proc applyMaps*(ports: var Ports, maps: seq[string]): FvmResult[void] =
+proc applyMaps*(ports: var Ports, maps: seq[string]) =
   ## Parses and applies all CLI port mappings to a VM instance.
   var specs: seq[MapSpec]
   for raw in maps:
-    specs.add(?parseMapSpec(raw))
-  let devices = ?buildDevices(specs)
+    specs.add(parseMapSpec(raw))
+  let devices = buildDevices(specs)
   for port, device in devices:
-    ?ports.registerPort(port, device)
-  ok()
+    ports.registerPort(port, device)

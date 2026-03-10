@@ -1,10 +1,4 @@
-import results
-
-export results
-
 type
-  FvmResult*[T] = Result[T, string]
-
   Byte* = uint8 ## The basic unit of memory and I/O in the FVM.
   Word* = uint16 ## The VM is 16-bit, so a word is also the address width.
   Address* = Word ## Memory addresses are 16-bit in the flat 64 KB space.
