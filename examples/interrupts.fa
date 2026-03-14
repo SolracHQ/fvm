@@ -1,63 +1,63 @@
 # Interrupt example
-# Run with: fvm run-asm -m0:::raw -s examples/interrupts.fa
 #
-# Installs three handlers:
+# Installs handlers for:
 #   - INT 15 software interrupt
-#   - bus fault from reading unmapped memory just below the stack
-#   - stack underflow from POP on an empty stack
+#   - bus fault from reading unmapped memory just below the fixed stack window
+#   - INT 16 as a second software interrupt slot
 #
-# Expected stdout:
-#   software interrupt ok
-#   bus fault: unmapped read below stack
-#   stack underflow: POP on empty stack
+# Run with:
+#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/interrupts.fo","devices":[{"type":"raw_io","port":0,"input":"stdin","output":"stdout"}]}'
+#
+# The raw_io device outputs raw bytes directly as ASCII characters.
+# The output will be three newline-terminated status messages.
 
 .rodata
     soft_msg: db "software interrupt ok\n", 0
     bus_msg: db "bus fault: unmapped read below stack\n", 0
-    underflow_msg: db "stack underflow: POP on empty stack\n", 0
+    demo_msg: db "second software interrupt ok\n", 0
 
 .code
 main:
-    MOV r0, 15
-    SIE r0, soft_handler
+    MOV rb0, 15
+    SIE rb0, soft_handler
 
-    MOV r0, 1
-    SIE r0, bus_handler
+    MOV rb0, 1
+    SIE rb0, bus_handler
 
-    MOV r0, 4
-    SIE r0, underflow_handler
+    MOV rb0, 16
+    SIE rb0, demo_handler
 
     INT 15
 
-    MOV r2, 0xEFFF
-    LOAD r3l, r2
+    MOV rw2, 0xFFBFFFFF
+    LOAD rb3, rw2
 
-    POP r4
+    INT 16
     HALT
 
 soft_handler:
-    MOV r1, soft_msg
+    MOV rw1, soft_msg
     CALL print
     IRET
 
 bus_handler:
-    MOV r1, bus_msg
+    MOV rw1, bus_msg
     CALL print
     IRET
 
-underflow_handler:
-    MOV r1, underflow_msg
+demo_handler:
+    MOV rw1, demo_msg
     CALL print
     IRET
 
 print:
-    LOAD r2l, r1
+    LOAD rb2, rw1
 .loop:
-    CMP r2l, 0
+    CMP rb2, 0
     JZ .done
-    OUT 0, r2l
-    ADD r1, 1
-    LOAD r2l, r1
+    OUT 0, rb2
+    ADD rw1, 1
+    LOAD rb2, rw1
     JMP .loop
 .done:
     RET

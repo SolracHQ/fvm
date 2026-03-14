@@ -1,35 +1,34 @@
-# Build the project and move binary to ./bin/fvm
+# Build the Rust workspace
 build:
-  nimble build && mkdir -p bin && mv fvm bin/fvm
+  cargo build --workspace
 
-# Build and run with provided arguments
-fvm *args: build
-  ./bin/fvm {{args}}
+# Run the assembler with provided arguments
+asm *args:
+  cargo run -p fvm-assembler -- {{args}}
 
-# Build and run assembler with provided arguments
-asm *args: build
-  ./bin/fvm run-asm {{args}}
+# Assemble the example referenced by `.rom` in a JSON config, then execute it.
+asm-exec config:
+  bash scripts/asm-exec.sh '{{config}}'
 
-# Run tests
-test:
-  nimble test
+# Run the VM with provided arguments
+run *args:
+  cargo run -p fvm-vm -- {{args}}
 
-# Run with provided arguments (run subcommand)
-run *args: build
-  ./bin/fvm run {{args}}
+# Run all Rust tests
+test *args:
+  cargo test {{args}}
 
-# Clean build artifacts and test binaries
+# Clean Rust build artifacts
 clean:
-  rm -rf bin
-  find tests -type f ! -name "*.nim*" -delete
+  cargo clean
 
 # Show available commands
 help:
   @echo "Available commands:"
-  @echo "  just build       - Build project to ./bin/fvm"
-  @echo "  just fvm <args>  - Build and run with args"
-  @echo "  just asm <args>  - Build and run assembler with args"
-  @echo "  just test        - Run tests"
-  @echo "  just run <args>  - Build and run with run subcommand"
-  @echo "  just clean       - Clean build artifacts and test binaries"
+  @echo "  just build       - Build the Rust workspace"
+  @echo "  just asm <args>  - Run the Rust assembler via cargo run"
+  @echo "  just asm-exec <json> - Assemble the example named by .rom and run it with a JSON VM config"
+  @echo "  just run <args>  - Run the Rust VM via cargo run"
+  @echo "  just test <args> - Run Rust tests via cargo test"
+  @echo "  just clean       - Remove cargo artifacts"
   @echo "  just help        - Show this message"

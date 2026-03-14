@@ -1,5 +1,7 @@
-# Basic Hello World using raw output mapped to stdout
-# Run with: fvm run-asm -m0:::raw -s examples/hello_world.fa
+# Basic Hello World.
+# Run with:
+#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/hello_world.fo","devices":[{"type":"raw_io","port":0,"input":"stdin","output":"stdout"}]}'
+# The raw_io device outputs raw bytes directly as ASCII characters.
 # An equivalent c program would be:
 #   #include <stdio.h>
 #   int main() {
@@ -17,13 +19,13 @@
 
 .code
 main:
-  MOV r1, msg             # r1 = address of msg
+  MOV rw1, msg            # rw1 = address of msg
   .loop:
-    LOAD r2l, r1          # r2l = byte at r1
-    CMP r2l, 0            # check for null terminator
+    LOAD rb2, rw1         # rb2 = byte at rw1
+    CMP rb2, 0            # check for null terminator
     JZ .done              # if zero, we're done
-    ADD r1, 1             # r1++ (move to next byte)
-    OUT 0, r2l            # write byte to port 0
+    ADD rw1, 1            # rw1++ (move to next byte)
+    OUT 0, rb2            # write byte to port 0
     JMP .loop             # repeat
   .done:
   HALT

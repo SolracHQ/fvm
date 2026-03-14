@@ -1,0 +1,12 @@
+[package]
+name = "fvm-assembler"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+clap = { version = "4.5.60", features = ["derive"] }
+thiserror = { workspace = true }
+fvm-core = { path = "../fvm-core" }

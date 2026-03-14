@@ -1,3 +1,7 @@
 # Fantasy Assembly File with a single nop instruction
+# Run with:
+#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/nop.fo","devices":[]}'
+.code
+main:
 NOP
 HALT

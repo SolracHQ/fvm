@@ -1,16 +1,12 @@
 # Memory sections example
 #
 # Demonstrates .rodata, .data, db/dw, char literals, LOAD and STORE.
-# Run with: fvm run-asm -s examples/load_store.fa -m0:::hex
-#
-# Expected output:
-#   0x48  ('H' from rodata string)
-#   0x2A  (42, the word from rodata table low byte)
-#   0x37  (55, written to .data counter then read back)
+# Run with:
+#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/load_store.fo","devices":[{"type":"hex_io","port":0,"input":"stdin","output":"stdout"}]}'
 
 .rodata
     greeting: db 'H', 'i', 0    # null-terminated string
-    table:    dw 42, 0x1234     # 16-bit constants
+    table:    dw 42, 0x12345678 # 32-bit constants
 
 .data
     counter: dw 0               # mutable word, starts at zero
@@ -19,20 +15,20 @@
 
 main:
     # Read first byte of greeting ('H' = 0x48) and print it
-    MOV  r0, greeting
-    LOAD r1l, r0
-    OUT  0, r1l                 # prints: 0x48
+    MOV  rw0, greeting
+    LOAD rb1, rw0
+    OUT  0, rb1
 
-    # Read the first word from table (42 = 0x002A), print low byte
-    MOV  r0, table
-    LOAD r2, r0
-    OUT  0, r2l                 # prints: 0x2A
+    # Read the first word from table (42 = 0x0000002A), print low byte
+    MOV  rw0, table
+    LOAD rw2, rw0
+    OUT  0, rb2
 
     # Write 55 (0x37) into counter, then read it back and print
-    MOV  r0, counter
-    MOV  r3l, 55
-    STORE r0, r3l               # byte store: write 0x37 to counter's address
-    LOAD  r4l, r0               # byte load: read it back
-    OUT   0, r4l                # prints: 0x37
+    MOV  rw0, counter
+    MOV  rb3, 55
+    STORE rw0, rb3              # byte store: write 0x37 to counter's address
+    LOAD  rb4, rw0              # byte load: read it back
+    OUT   0, rb4
 
     HALT

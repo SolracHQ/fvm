@@ -1,10 +1,32 @@
-# test zext and sext instructions
-MOV r0l, 0xFF
-ZEXT r1, r0l
-push r1
+# Zero/sign extension across byte, halfword, and word views.
+# Run with:
+#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/zext_and_sext.fo","devices":[]}'
 
-MOV r2l, 0x80
-SEXT r3, r2l
-push r3
+.code
+main:
+
+# byte -> halfword
+MOV  rb0, 0xFF
+ZEXT rh1, rb0
+
+# byte -> word
+MOV  rb2, 0x80
+ZEXT rw3, rb2
+
+# halfword -> word
+MOV  rh4, 0x8001
+ZEXT rw5, rh4
+
+# signed byte -> halfword
+MOV  rb6, 0x80
+SEXT rh7, rb6
+
+# signed byte -> word
+MOV  rb8, 0xFF
+SEXT rw9, rb8
+
+# signed halfword -> word
+MOV  rh10, 0x8001
+SEXT rw11, rh10
 
 HALT
