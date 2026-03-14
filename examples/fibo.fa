@@ -15,59 +15,62 @@
 #     }
 #   }
 #
-# Run with: just asm examples/fibonacci.fa --map "0:::dec"
+# Run with:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/fibo.fo", devices: [(type: "decimal_io", port: 0, input: "stdin", output: "stdout")])'
 # Expected output (one per line): 0 1 1 2 3 5 8 13 21 34
 
 .code
 
 main:
-  MOV r5, 0
+  MOV rw5, 0
 
 .loop:
-  CMP r5, 10
+  CMP rw5, 10
   JZ .done
 
-  PUSH r5
-  MOV  r0, r5
+  PUSH rw5
+  MOV  rw0, rw5
   CALL fib
-  POP  r5
+  POP  rw5
 
-  OUT  0, r0l         # dec device prints the value as decimal + newline
+  OUT  0, rw0
 
-  ADD  r5, 1
+  ADD  rw5, 1
   JMP  .loop
 
 .done:
   HALT
 
-# fib(n): n in r0, result in r0.
+# fib(n): n in rw0, result in rw0.
 #
 # Stack frame for the recursive case:
 #   [sp+0]  fib(n-1)  pushed after first call returns
-#   [sp+2]  n         pushed at function entry
+#   [sp+4]  n         pushed at function entry
 fib:
-  CMP r0, 1
-  JC .base            # carry means 1 > r0, so r0 == 0
-  JZ .base            # r0 == 1
+  CMP rw0, 1
+  JC .base            # carry means 1 > rw0, so rw0 == 0
+  JZ .base            # rw0 == 1
 
-  PUSH r0             # [sp] = n
+  PUSH rw0            # [sp] = n
 
-  SUB  r0, 1
+  SUB  rw0, 1
   CALL fib            # r0 = fib(n-1)
 
-  PUSH r0             # [sp] = fib(n-1),  [sp+2] = n
+  PUSH rw0            # [sp] = fib(n-1), [sp+4] = n
 
-  MOV  r0, sp
-  ADD  r0, 2          # r0 = address of saved n
-  LOAD r0, r0         # r0 = n
-  SUB  r0, 2          # r0 = n - 2
+  MOV  rw1, sp
+  ADD  rw1, 4         # rw1 = address of saved n
+  LOAD rw1, rw1       # rw1 = n
+  SUB  rw1, 2         # rw1 = n - 2
+  MOV  rw0, rw1
   CALL fib            # r0 = fib(n-2)
 
-  LOAD r1, sp         # r1 = fib(n-1) still on stack
-  ADD  r0, r1         # r0 = fib(n-2) + fib(n-1)
+  MOV  rw1, sp
+  LOAD rw1, rw1       # rw1 = fib(n-1) still on stack
+  ADD  rw0, rw1       # rw0 = fib(n-2) + fib(n-1)
 
-  POP r1              # discard fib(n-1) slot
-  POP r1              # discard n slot
+  POP rw1             # discard fib(n-1) slot
+  POP rw1             # discard n slot
 
 .base:
   RET

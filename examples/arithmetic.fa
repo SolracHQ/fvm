@@ -1,35 +1,39 @@
 # Arithmetic and bitwise operations
 #
 # Demonstrates ADD, SUB, AND, OR, XOR, NOT, and CMP.
-# Run with: fvm run-asm -s examples/arithmetic.fa --step
+# Run with:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/arithmetic.fo", devices: [])'
+
+.code
+main:
 
 # Integer arithmetic
-MOV  r0, 10
-MOV  r1, 3
-ADD  r0, r1        # r0 = 13
+MOV  rw0, 10
+MOV  rw1, 3
+ADD  rw0, rw1      # rw0 = 13
 
-MOV  r2, 100
-MOV  r3, 37
-SUB  r2, r3        # r2 = 63
+MOV  rw2, 100
+MOV  rw3, 37
+SUB  rw2, rw3      # rw2 = 63
 
 # Bitwise operations
-MOV  r4, 0xFF00
-MOV  r5, 0x0F0F
-AND  r4, r5        # r4 = 0x0F00
-OR   r4, r5        # r4 = 0x0F0F
-XOR  r4, r5        # r4 = 0x0000  (r4 == r5 at this point, clears all bits)
+MOV  rw4, 0xFF00FF00
+MOV  rw5, 0x0F0F00FF
+AND  rw4, rw5      # rw4 = 0x0F000000
+OR   rw4, rw5
+XOR  rw4, rw5      # rw4 == 0 after XOR with itself
 
-MOV  r6, 0x00FF
-NOT  r6            # r6 = 0xFF00
+MOV  rw6, 0x000000FF
+NOT  rw6
 
-# Byte-lane arithmetic
-MOV  r7l, 0x05
-MOV  r8l, 0x03
-ADD  r7l, r8l      # r7l = 0x08
+# Byte-view arithmetic
+MOV  rb7, 0x05
+MOV  rb8, 0x03
+ADD  rb7, rb8      # rb7 = 0x08
 
 # CMP sets flags but does not modify registers
-MOV  r9, 42
-MOV  r10, 42
-CMP  r9, r10       # Z=true (equal), C=false, N=false
+MOV  rw9, 42
+MOV  rw10, 42
+CMP  rw9, rw10     # Z=true (equal), C=false, N=false
 
 HALT

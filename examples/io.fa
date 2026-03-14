@@ -1,20 +1,19 @@
 # I/O port example
 #
-# Writes values to port 0 (hexprint device, auto-registered by the CLI).
-# Run with: fvm run-asm -s examples/io.fa -m0:::hex
+# Run with:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/io.fo", devices: [(type: "hex_io", port: 0, input: "stdin", output: "stdout")])'
 #
-# Expected output on stdout:
-#   0x41
-#   0x00
-#   0x42
+# The exact host-side rendering depends on the device bound to port 0.
 
-# Byte-lane write: sends exactly one byte to the port
-MOV  r0l, 0x41
-OUT  0, r0l        # prints: 0x41
+.code
+main:
 
-# Full-register write: sends two bytes, high byte first (big-endian)
-MOV  r1, 0x0042
-OUT  0, r1         # prints: 0x00
-                   #         0x42
+# Byte-view write: sends an 8-bit value to the port
+MOV  rb0, 0x41
+OUT  0, rb0
+
+# Word write: sends the full 32-bit value to the port
+MOV  rw1, 0x00000042
+OUT  0, rw1
 
 HALT

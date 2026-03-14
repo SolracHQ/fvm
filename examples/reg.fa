@@ -1,19 +1,23 @@
 # Register and stack test
-MOV r0, 42
-PUSH r0
-MOV r0, 0
-POP r1
-MOV r2, r1
+# Run with:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/reg.fo", devices: [])'
+.code
+main:
+MOV rw0, 42
+PUSH rw0
+MOV rw0, 0
+POP rw1
+MOV rw2, rw1
 
-# 16-bit immediate
-MOV r3, 0x1234
+# 32-bit immediate
+MOV rw3, 0x12345678
 
-# Byte-lane access: write low byte only, high byte is preserved
-MOV r4, 0xABCD
-MOV r4l, 0xFF
+# Byte-view access: write low byte only, upper bits are preserved
+MOV rw4, 0xAABBCCDD
+MOV rb4, 0xFF
 
 # Byte-lane stack round-trip
-PUSH r4l
-POP r5l
+PUSH rb4
+POP rb5
 
 HALT
