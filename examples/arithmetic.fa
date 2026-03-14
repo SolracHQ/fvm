@@ -2,7 +2,7 @@
 #
 # Demonstrates ADD, SUB, AND, OR, XOR, NOT, and CMP.
 # Run with:
-#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/arithmetic.fo","devices":[]}'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/arithmetic.fo", devices: [])'
 
 .code
 main:

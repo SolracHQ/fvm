@@ -389,11 +389,7 @@ data_ptr: dw main
 
         assert_eq!(
             format.relocations,
-            vec![
-                (Section::RoData, 0),
-                (Section::Code, 2),
-                (Section::Data, 0),
-            ]
+            vec![(Section::RoData, 0), (Section::Code, 2), (Section::Data, 0),]
         );
 
         let bytes = format.to_bytes().expect("serialization should succeed");

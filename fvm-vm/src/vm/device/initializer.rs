@@ -88,10 +88,12 @@ pub fn initialize_devices(config: &VmConfig) -> Result<InitializedDevices, VmErr
 fn open_input(path: &str, device: [u8; 8]) -> Result<Box<dyn io::Read>, VmError> {
     match path {
         "stdin" => Ok(Box::new(io::stdin())),
-        other => Ok(Box::new(File::open(other).map_err(|e| VmError::DeviceError {
-            device,
-            offset: 0,
-            message: format!("failed to open input file '{other}': {e}"),
+        other => Ok(Box::new(File::open(other).map_err(|e| {
+            VmError::DeviceError {
+                device,
+                offset: 0,
+                message: format!("failed to open input file '{other}': {e}"),
+            }
         })?)),
     }
 }
@@ -100,10 +102,12 @@ fn open_output(path: &str, device: [u8; 8]) -> Result<Box<dyn io::Write>, VmErro
     match path {
         "stdout" => Ok(Box::new(io::stdout())),
         "stderr" => Ok(Box::new(io::stderr())),
-        other => Ok(Box::new(File::create(other).map_err(|e| VmError::DeviceError {
-            device,
-            offset: 0,
-            message: format!("failed to open output file '{other}': {e}"),
+        other => Ok(Box::new(File::create(other).map_err(|e| {
+            VmError::DeviceError {
+                device,
+                offset: 0,
+                message: format!("failed to open output file '{other}': {e}"),
+            }
         })?)),
     }
 }

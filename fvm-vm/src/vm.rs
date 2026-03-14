@@ -34,8 +34,8 @@ const USER_CONTEXT: u32 = 1;
 
 pub struct VM {
     pub files: [RegisterFile; 2], // 0 = kernel, 1 = user
-    pub active: usize,            // must always be KERNEL_CONTEXT or USER_CONTEXT
-    pub cr: u32,
+    pub active: usize,            // must always be KERNEL_CONTEXT or USER_CONTEXT (as usize)
+    pub mr: u32,
     pub ivt: [Address; 256],
     // Last triggered interrupt, If is a memory fault and the new interrupt is also a memory fault, the vm should halt.
     pub pending_interrupt: Option<u8>,
@@ -65,7 +65,7 @@ impl VM {
         let mut vm = Self {
             files: [RegisterFile::new(), RegisterFile::new()],
             active: 0,
-            cr: 0,
+            mr: 0,
             ivt: [0; 256],
             pending_interrupt: None,
             bus: bus?,
@@ -100,7 +100,7 @@ impl VM {
             return Ok(());
         }
 
-        self.bus.set_context(self.cr);
+        self.bus.set_context(self.files[self.active].cr);
 
         if let Some(interrupt) = self.poll_devices()? {
             self.raise_interrupt(interrupt.index(), self.files[self.active].ip)?;
@@ -139,7 +139,7 @@ impl VM {
 
     /// This function executes the initialization steps for the VM, kinda the bios work, is a vm so is magic
     /// Steps:
-    /// 1. Write the discovery table to ram start address and map it to the first few pages of the kernel context. 
+    /// 1. Write the discovery table to ram start address and map it to the first few pages of the kernel context.
     ///    The discovery table contains an entry for each physical memory region, including its base address, size, and device ID.
     /// 2. Load the program sections into memory and map them to the appropriate virtual addresses.
     /// 3. Map the fixed stack region to the end of main RAM.
@@ -157,7 +157,7 @@ impl VM {
         }
 
         self.bus.set_context(KERNEL_CONTEXT);
-        self.cr = KERNEL_CONTEXT;
+        self.files[0].cr = KERNEL_CONTEXT;
 
         self.write_discovery_table(&physical_regions)?;
 
@@ -177,18 +177,13 @@ impl VM {
                 .ok_or(VmError::AddressOverflow)?,
         )?;
 
+        self.bus
+            .mmap(KERNEL_CONTEXT, 0, 0, discovery_pages, bus::perm::READ)?;
         self.bus.mmap(
             KERNEL_CONTEXT,
-            0,
-            0,
-            discovery_pages * PAGE_SIZE,
-            bus::perm::READ,
-        )?;
-        self.bus.mmap(
-            KERNEL_CONTEXT,
-            fault_info_base,
-            fault_info_base,
-            FAULT_INFO_SIZE,
+            fault_info_base / PAGE_SIZE,
+            fault_info_base / PAGE_SIZE,
+            FAULT_INFO_SIZE / PAGE_SIZE,
             bus::perm::READ,
         )?;
 
@@ -211,16 +206,16 @@ impl VM {
         let stack_phys_base = main_ram.size - STACK_SIZE;
         self.bus.mmap(
             KERNEL_CONTEXT,
-            STACK_BASE,
-            stack_phys_base,
-            STACK_SIZE,
+            STACK_BASE / PAGE_SIZE,
+            stack_phys_base / PAGE_SIZE,
+            STACK_SIZE / PAGE_SIZE,
             bus::perm::READ | bus::perm::WRITE,
         )?;
 
         self.files[0].ip = patched_program.entry_point;
         self.files[0].sp = STACK_TOP;
         self.files[1] = RegisterFile::new();
-        self.active = 0;
+        self.active = KERNEL_CONTEXT as usize;
 
         Ok(())
     }
@@ -252,9 +247,9 @@ impl VM {
             self.bus.write_physical_bytes(placement.phys_base, bytes)?;
             self.bus.mmap(
                 KERNEL_CONTEXT,
-                placement.actual_base,
-                placement.phys_base,
-                placement.aligned_len,
+                placement.actual_base / PAGE_SIZE,
+                placement.phys_base / PAGE_SIZE,
+                placement.aligned_len / PAGE_SIZE,
                 permissions,
             )?;
         }
@@ -281,7 +276,7 @@ impl VM {
     }
 
     pub(crate) fn raise_interrupt(&mut self, interrupt_index: u8, resume_ip: u32) -> VmResult<()> {
-        self.bus.set_context(self.cr);
+        self.bus.set_context(self.files[0].cr);
 
         if self.pending_interrupt == Some(1) && interrupt_index == 1 {
             self.halted = true;
@@ -290,14 +285,15 @@ impl VM {
         }
 
         self.pending_interrupt = Some(interrupt_index);
-        let came_from_user = self.active == 1;
+        let came_from_user = self.active == USER_CONTEXT as usize;
         let interrupted = self.files[self.active].clone();
-        self.active = 0;
+        self.active = KERNEL_CONTEXT as usize;
 
         for value in interrupted.regs {
             self.push_kernel_u32(value)?;
         }
         self.push_kernel_u32(resume_ip)?;
+        self.push_kernel_u32(interrupted.cr)?;
         self.push_kernel_u32(interrupted.flags.bits() as u32)?;
         self.push_kernel_byte(u8::from(came_from_user))?;
 
@@ -319,15 +315,21 @@ impl VM {
 
         let came_from_user = self.pop_kernel_byte()? != 0;
         let flags = self.pop_kernel_u32()? as u8;
+        let cr = self.pop_kernel_u32()?;
         let ip = self.pop_kernel_u32()?;
         let mut regs = [0u32; 16];
         for reg in &mut regs {
             *reg = self.pop_kernel_u32()?;
         }
 
-        let target = if came_from_user { 1 } else { 0 };
+        let target = if came_from_user {
+            USER_CONTEXT as usize
+        } else {
+            KERNEL_CONTEXT as usize
+        };
         self.files[target].regs = regs;
         self.files[target].ip = ip;
+        self.files[target].cr = cr;
         self.files[target].flags = flags::Flags::from_bits(flags);
         self.active = target;
         Ok(())
@@ -388,7 +390,6 @@ fn opcode_controls_ip(opcode: Op) -> bool {
             | Op::Iret
             | Op::IntImm
             | Op::IntReg
-            | Op::Dpl
     )
 }
 

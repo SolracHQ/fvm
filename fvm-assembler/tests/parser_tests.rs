@@ -151,11 +151,18 @@ mod tests {
 
     #[test]
     fn test_parse_supports_cr_register() {
-        let result = assemble_source("main:MOV rw0, cr\nMOV cr, rw1\nHALT");
+        // Reading cr via MOV is allowed.
+        let read_result = assemble_source("main:MOV rw0, cr\nHALT");
         assert!(
-            result.is_ok(),
-            "Parser should handle cr register access, but got error: {:?}",
-            result.err()
+            read_result.is_ok(),
+            "Parser should allow reading cr, but got error: {:?}",
+            read_result.err()
+        );
+        // Writing cr via MOV is rejected at parse time; use TKR instead.
+        let write_result = assemble_source("main:MOV cr, rw1\nHALT");
+        assert!(
+            write_result.is_err(),
+            "Parser should reject MOV cr, rw (use TKR instead)"
         );
     }
 

@@ -16,7 +16,7 @@
 #   }
 #
 # Run with:
-#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/fibo.fo","devices":[{"type":"decimal_io","port":0,"input":"stdin","output":"stdout"}]}'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/fibo.fo", devices: [(type: "decimal_io", port: 0, input: "stdin", output: "stdout")])'
 # Expected output (one per line): 0 1 1 2 3 5 8 13 21 34
 
 .code

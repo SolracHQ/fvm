@@ -20,8 +20,9 @@ Comments start with `#` and continue to the end of the line.
 
 ## Registers
 
-16 general-purpose registers plus `sp` (stack pointer) and `cr` (context register). Each
-general-purpose register has three views that share the same underlying storage:
+16 general-purpose registers plus `sp` (stack pointer), `cr` (context register), `ip`
+(instruction pointer), and `mr` (mapping register). Each general-purpose register has three
+views that share the same underlying storage:
 
 - `rw0`..`rw15`: full 32-bit register
 - `rh0`..`rh15`: low 16 bits of the corresponding `rw` register
@@ -44,8 +45,25 @@ to promote first.
 register: you can read it into a general register, do arithmetic on it, and write it back
 directly.
 
-`cr` holds the active address space context identifier. Readable in any mode, writable only
-from kernel mode. Writing it in user mode raises interrupt 6.
+`cr` holds the active address space context identifier used for virtual address translation.
+It is part of each register file and switches with it on a mode change. Readable in any mode,
+but writing it directly in user mode raises interrupt 6. The kernel sets the user CR before
+`DPL` via `TKR cr, rw`.
+
+`ip` holds the current instruction pointer. Readable in any mode via `TUR`, writable only from
+kernel mode via `TKR`. It is not directly writable by general instructions. The kernel uses
+`TKR ip, rw` to set the user entry point before `DPL`.
+
+`mr` holds the target context for memory mapping operations. `MMAP`, `MUNMAP`, and `MPROTECT`
+all consult `mr` instead of `cr` when selecting which context to modify. Readable and writable
+only from kernel mode. Initialized to 0 on VM start. Write it with `MOV mr, rw` before
+issuing mapping instructions for a new context, then restore it to 0 when done.
+
+```
+MOV  mr, rw0    # target mappings at context in rw0
+MMAP ...        # modifies context mr, not cr
+MOV  mr, 0      # restore
+```
 
 ---
 
@@ -81,8 +99,8 @@ main:
 ```
 
 Section layout at runtime is determined by the loader. Each non-empty section is placed at the
-next 4 kb boundary after the previous region, following the device table and fault info region
-at the start of the address space. The stack is always mapped to `0xFFC00000..0xFFFFFFFF`.
+next 4 kb boundary after the previous region, following the fault info region at the start of
+the address space. The stack is always mapped to `0xFFC00000..0xFFFFFFFF`.
 See the VM reference for the full layout.
 
 Labels defined in `.rodata` or `.data` resolve to their loaded address and are usable as
@@ -167,12 +185,19 @@ MOV  rw, label      # loads the address of label as imm32
 MOV  rw, rw
 MOV  rw, sp
 MOV  sp, rw
+MOV  rw, cr
+MOV  cr, rw         # privileged, writes kernel cr only
+MOV  rw, mr
+MOV  mr, rw         # privileged
 MOV  rh, imm16
 MOV  rh, rh
 MOV  rb, imm8
 MOV  rb, 'A'        # char literal immediate
 MOV  rb, rb
 ```
+
+`ip` is not a valid MOV operand. Use `TKR ip, rw` to set the user instruction pointer from
+kernel mode.
 
 To move a narrower view into a wider register use `ZEXT` or `SEXT` first.
 
@@ -622,7 +647,7 @@ IRET
 
 Activates the user register file. Privileged and one-way: the only path back to kernel mode
 is through an interrupt. The kernel is responsible for setting up the user file completely
-before calling `DPL`.
+before calling `DPL`, including `sp` and `ip` via `TKR`.
 
 ```
 DPL
@@ -633,10 +658,13 @@ DPL
 ### TUR
 
 Transfers a value from a user register into a kernel register without switching mode.
-Privileged. Both operands must be `rw`.
+Privileged. Both operands must be `rw`. `ip` and `cr` are valid as sources to read the user
+instruction pointer and address space context.
 
 ```
 TUR rw_dst, rw_src   # kern_file[dst] = user_file[src]
+TUR rw_dst, ip       # kern_file[dst] = user_file.ip
+TUR rw_dst, cr       # kern_file[dst] = user_file.cr
 ```
 
 Reading from an uninitialised user file returns zero.
@@ -646,54 +674,61 @@ Reading from an uninitialised user file returns zero.
 ### TKR
 
 Transfers a value from a kernel register into a user register without switching mode.
-Privileged. Both operands must be `rw`.
+Privileged. Both operands must be `rw`. `ip` and `cr` are valid as destinations to set the
+user entry point and address space before `DPL`.
 
 ```
 TKR rw_dst, rw_src   # user_file[dst] = kern_file[src]
+TKR ip, rw_src       # user_file.ip   = kern_file[src]
+TKR cr, rw_src       # user_file.cr   = kern_file[src]
 ```
 
 ---
 
 ### MMAP
 
-Maps a range of physical pages into the current address space context. Privileged.
+Maps a range of physical pages into the context held in `mr`. Privileged.
 
 ```
-MMAP rw, rw, rw     # virt_addr, phys_addr, size (all rw)
-MMAP rw, rw, imm32  # size as immediate
+MMAP rw, rw, rw     # virt_page, phys_page, page_count (all rw)
+MMAP rw, rw, imm32  # page_count as immediate
 ```
 
-- `virt_addr` and `phys_addr` must be `rw` registers.
-- `size` may be an `rw` register or an `imm32`.
-- Size is rounded up to the nearest 4 kb page boundary.
-- Each covered page is mapped independently. Overlapping an existing mapping
-  replaces it.
+- All operands are page numbers or page counts, not byte addresses. Multiply by 4096 to get
+  the corresponding byte address.
+- `virt_page` and `phys_page` must be `rw` registers.
+- `page_count` may be an `rw` register or an `imm32`.
+- Each covered page is mapped independently. Overlapping an existing mapping replaces it.
+- The target context is `mr`, not `cr`. Set `mr` before calling `MMAP` when mapping into a
+  context other than the current one.
 
 ---
 
 ### MUNMAP
 
-Unmaps a range of pages from the current address space context. Privileged.
+Unmaps a range of pages from the context held in `mr`. Privileged.
 
 ```
-MUNMAP rw, rw       # virt_addr, size (both rw)
-MUNMAP rw, imm32    # size as immediate
+MUNMAP rw, rw       # virt_page, page_count (both rw)
+MUNMAP rw, imm32    # page_count as immediate
 ```
 
-- `virt_addr` must be an `rw` register.
-- `size` may be an `rw` register or an `imm32`.
-- Size is rounded up to the nearest 4 kb page boundary.
+- `virt_page` must be an `rw` register.
+- `page_count` may be an `rw` register or an `imm32`.
 - Unmapping a page that is not mapped raises interrupt 1.
+- The target context is `mr`, not `cr`.
 
 ---
 
 ### MPROTECT
 
-Sets the permission bits on a single page. Privileged.
+Sets the permission bits on a range of pages in the context held in `mr`. Privileged.
 
 ```
-MPROTECT rw, rw, rb     # virt_addr in rw, size in rw or imm32, permission bits in rb
-MPROTECT rw, imm32, rb  # virt_addr in rw, size in rw or imm32, permission bits in rb
+MPROTECT rw, rw, rb     # virt_page, page_count, permission bits
+MPROTECT rw, imm32, rb  # page_count as immediate
 ```
+
+- The target context is `mr`, not `cr`.
 
 Permission bits: bit 0 = Read, bit 1 = Write, bit 2 = Execute.

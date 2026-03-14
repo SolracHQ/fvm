@@ -3,24 +3,24 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "usage: scripts/asm-exec.sh '<json-or-config-path>'" >&2
+  echo "usage: scripts/asm-exec.sh '<ron-or-config-path>'" >&2
   exit 1
 fi
 
 config_input="$1"
 
 if [[ -f "$config_input" ]]; then
-  config_json="$(cat "$config_input")"
+  config_ron="$(cat "$config_input")"
 else
-  config_json="$config_input"
+  config_ron="$config_input"
 fi
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "jq is required for asm-exec" >&2
+if ! command -v rq >/dev/null 2>&1; then
+  echo "rq is required for asm-exec" >&2
   exit 1
 fi
 
-rom_path="$(printf '%s\n' "$config_json" | jq -r '.rom')"
+rom_path="$(printf '%s\n' "$config_ron" | rq 'rom')"
 
 if [[ -z "$rom_path" || "$rom_path" == "null" ]]; then
   echo "config must provide a non-empty .rom path" >&2
@@ -38,4 +38,4 @@ fi
 mkdir -p "$(dirname "$rom_path")"
 
 cargo run -p fvm-assembler -- "$source_path" --output "$rom_path"
-cargo run -p fvm-vm -- --config "$config_json"
+cargo run -p fvm-vm -- --config "$config_ron"

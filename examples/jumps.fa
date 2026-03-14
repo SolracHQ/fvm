@@ -5,7 +5,7 @@
 # Computes sum_down(3) = 3 + 2 + 1 = 6 via a subroutine.
 # Result ends up in rw0 = 6. rw15 holds the initial stack pointer.
 # Run with:
-#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/jumps.fo","devices":[]}'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/jumps.fo", devices: [])'
 
 main:
     MOV rw15, sp        # snapshot SP before any stack activity

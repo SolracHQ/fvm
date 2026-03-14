@@ -1,6 +1,6 @@
 # Zero/sign extension across byte, halfword, and word views.
 # Run with:
-#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/zext_and_sext.fo","devices":[]}'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/zext_and_sext.fo", devices: [])'
 
 .code
 main:

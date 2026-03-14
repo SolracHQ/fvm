@@ -5,11 +5,9 @@ use std::{
 };
 
 use fvm_assembler::assemble_source;
-use fvm_vm::{
-    vm::{
-        VM,
-        config::{DeviceConfig, GeneralDeviceConfig, VmConfig},
-    },
+use fvm_vm::vm::{
+    VM,
+    config::{DeviceConfig, GeneralDeviceConfig, VmConfig},
 };
 
 const MAIN_RAM_SIZE: u32 = 8 * 1024 * 1024;
@@ -121,11 +119,13 @@ fn hello_world_example_emits_ascii_codes_through_decimal_device() {
     drop(vm);
 
     let rendered = fs::read_to_string(output.path()).expect("failed to read decimal output");
-    let expected = [72, 101, 108, 108, 111, 44, 32, 119, 111, 114, 108, 100, 33, 10]
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let expected = [
+        72, 101, 108, 108, 111, 44, 32, 119, 111, 114, 108, 100, 33, 10,
+    ]
+    .into_iter()
+    .map(|value| value.to_string())
+    .collect::<Vec<_>>()
+    .join("\n");
 
     assert_eq!(rendered, format!("{expected}\n"));
 }

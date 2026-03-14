@@ -1,20 +1,14 @@
 use std::rc::Rc;
 
 use fvm_core::{
-    argument::Argument,
-    instruction::Instruction,
-    opcode::Op,
-    register::RegisterEncoding,
+    argument::Argument, instruction::Instruction, opcode::Op, register::RegisterEncoding,
 };
 
 use crate::{
     error::{VmError, VmResult},
     vm::{
-        bus,
-        device::PortMappedDevice,
-        flags::Flag,
+        KERNEL_CONTEXT, USER_CONTEXT, VM, bus, device::PortMappedDevice, flags::Flag,
         interrupts::Interrupt,
-        VM,
     },
 };
 
@@ -75,8 +69,12 @@ pub fn execute_instruction(vm: &mut VM, instruction: Instruction) -> VmResult<()
         Op::IntImm | Op::IntReg => int_instruction(vm, &instruction),
         Op::Iret => vm.iret(),
         Op::Dpl => drop_to_user(vm),
-        Op::Tur => transfer_user_to_kernel(vm, &instruction.arguments[0], &instruction.arguments[1]),
-        Op::Tkr => transfer_kernel_to_user(vm, &instruction.arguments[0], &instruction.arguments[1]),
+        Op::Tur => {
+            transfer_user_to_kernel(vm, &instruction.arguments[0], &instruction.arguments[1])
+        }
+        Op::Tkr => {
+            transfer_kernel_to_user(vm, &instruction.arguments[0], &instruction.arguments[1])
+        }
         Op::ShlReg | Op::ShlImm => shift(vm, &instruction, ShiftOp::Shl),
         Op::ShrReg | Op::ShrImm => shift(vm, &instruction, ShiftOp::Shr),
         Op::SarReg | Op::SarImm => shift(vm, &instruction, ShiftOp::Sar),
@@ -85,10 +83,6 @@ pub fn execute_instruction(vm: &mut VM, instruction: Instruction) -> VmResult<()
         Op::MmapRegRegReg | Op::MmapRegRegImm => mmap_instruction(vm, &instruction),
         Op::MunmapRegReg | Op::MunmapRegImm => munmap_instruction(vm, &instruction),
         Op::Mprotect => mprotect_instruction(vm, &instruction),
-        _ => Err(VmError::InvalidOpcode {
-            opcode: instruction.opcode as u8,
-            address: vm.files[vm.active].ip,
-        }),
     }
 }
 
@@ -138,7 +132,11 @@ fn move_register(vm: &mut VM, dst_arg: &Argument, src_arg: &Argument) -> VmResul
 fn zero_extend(vm: &mut VM, dst_arg: &Argument, src_arg: &Argument) -> VmResult<()> {
     let dst = expect_register(dst_arg)?;
     let src = expect_register(src_arg)?;
-    write_register(vm, dst, read_register(vm, src)? & mask_for_width(src.width_bytes()))
+    write_register(
+        vm,
+        dst,
+        read_register(vm, src)? & mask_for_width(src.width_bytes()),
+    )
 }
 
 fn sign_extend(vm: &mut VM, dst_arg: &Argument, src_arg: &Argument) -> VmResult<()> {
@@ -249,7 +247,9 @@ fn output(vm: &mut VM, port_arg: &Argument, src_arg: &Argument) -> VmResult<()> 
         1 => device.write_byte(port, value as u8),
         2 => device.write_half(port, value as u16),
         4 => device.write_word(port, value),
-        width => Err(VmError::InvalidRomImage(format!("unsupported output width {width}"))),
+        width => Err(VmError::InvalidRomImage(format!(
+            "unsupported output width {width}"
+        ))),
     }
 }
 
@@ -278,7 +278,9 @@ fn store(vm: &mut VM, addr_arg: &Argument, src_arg: &Argument) -> VmResult<()> {
         1 => vm.bus.write_byte(addr, value as u8),
         2 => vm.bus.write_u16(addr, value as u16),
         4 => vm.bus.write_u32(addr, value),
-        width => Err(VmError::InvalidRomImage(format!("unsupported store width {width}"))),
+        width => Err(VmError::InvalidRomImage(format!(
+            "unsupported store width {width}"
+        ))),
     }
 }
 
@@ -315,7 +317,16 @@ fn read_register(vm: &VM, reg: RegisterEncoding) -> VmResult<u32> {
     let value = if reg.is_sp() {
         file.sp
     } else if reg.is_cr() {
-        vm.cr
+        file.cr
+    } else if reg.is_ip() {
+        return Err(VmError::InvalidRomImage(
+            "ip is not readable via MOV".to_string(),
+        ));
+    } else if reg.is_mr() {
+        if vm.active != KERNEL_CONTEXT as usize {
+            return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
+        }
+        vm.mr
     } else if reg.is_rw() {
         file.regs[reg.index() as usize]
     } else if reg.is_rh() {
@@ -332,12 +343,21 @@ fn read_register(vm: &VM, reg: RegisterEncoding) -> VmResult<u32> {
 }
 
 fn write_register(vm: &mut VM, reg: RegisterEncoding, value: u32) -> VmResult<()> {
-    if reg.is_cr() && vm.active != 0 {
+    if reg.is_cr() {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
 
-    if reg.is_cr() {
-        vm.cr = value;
+    if reg.is_ip() {
+        return Err(VmError::InvalidRomImage(
+            "ip is not writable via MOV".to_string(),
+        ));
+    }
+
+    if reg.is_mr() {
+        if vm.active != KERNEL_CONTEXT as usize {
+            return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
+        }
+        vm.mr = value;
         return Ok(());
     }
 
@@ -374,7 +394,9 @@ fn push_value(vm: &mut VM, width: u8, value: u32) -> VmResult<()> {
         1 => vm.bus.write_byte(new_sp, value as u8),
         2 => vm.bus.write_u16(new_sp, value as u16),
         4 => vm.bus.write_u32(new_sp, value),
-        _ => Err(VmError::InvalidRomImage(format!("unsupported push width {width}"))),
+        _ => Err(VmError::InvalidRomImage(format!(
+            "unsupported push width {width}"
+        ))),
     }
 }
 
@@ -385,14 +407,20 @@ fn pop_value(vm: &mut VM, width: u8) -> VmResult<u32> {
         1 => vm.bus.read_byte(sp)? as u32,
         2 => vm.bus.read_u16(sp)? as u32,
         4 => vm.bus.read_u32(sp)?,
-        _ => return Err(VmError::InvalidRomImage(format!("unsupported pop width {width}"))),
+        _ => {
+            return Err(VmError::InvalidRomImage(format!(
+                "unsupported pop width {width}"
+            )));
+        }
     };
-    vm.files[active].sp = sp.checked_add(width as u32).ok_or(VmError::AddressOverflow)?;
+    vm.files[active].sp = sp
+        .checked_add(width as u32)
+        .ok_or(VmError::AddressOverflow)?;
     Ok(value)
 }
 
 fn sie(vm: &mut VM, idx_arg: &Argument, addr_arg: &Argument) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
     let index = read_register(vm, expect_register(idx_arg)?)? as usize;
@@ -408,30 +436,54 @@ fn int_instruction(vm: &mut VM, instruction: &Instruction) -> VmResult<()> {
 }
 
 fn drop_to_user(vm: &mut VM) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
-    vm.active = 1;
+    vm.active = USER_CONTEXT as usize;
     Ok(())
 }
 
 fn transfer_user_to_kernel(vm: &mut VM, dst_arg: &Argument, src_arg: &Argument) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
     let dst = expect_register(dst_arg)?;
     let src = expect_register(src_arg)?;
-    vm.files[0].regs[dst.index() as usize] = vm.files[1].regs[src.index() as usize];
+    let source_value = if src.is_rw() {
+        vm.files[USER_CONTEXT as usize].regs[src.index() as usize]
+    } else if src.is_ip() {
+        vm.files[USER_CONTEXT as usize].ip
+    } else if src.is_cr() {
+        vm.files[USER_CONTEXT as usize].cr
+    } else {
+        return Err(VmError::InvalidRomImage(format!(
+            "TUR: invalid source register 0x{:02X}",
+            src.0
+        )));
+    };
+    vm.files[KERNEL_CONTEXT as usize].regs[dst.index() as usize] = source_value;
     Ok(())
 }
 
 fn transfer_kernel_to_user(vm: &mut VM, dst_arg: &Argument, src_arg: &Argument) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
     let dst = expect_register(dst_arg)?;
     let src = expect_register(src_arg)?;
-    vm.files[1].regs[dst.index() as usize] = vm.files[0].regs[src.index() as usize];
+    let source_value = vm.files[KERNEL_CONTEXT as usize].regs[src.index() as usize];
+    if dst.is_rw() {
+        vm.files[USER_CONTEXT as usize].regs[dst.index() as usize] = source_value;
+    } else if dst.is_ip() {
+        vm.files[USER_CONTEXT as usize].ip = source_value;
+    } else if dst.is_cr() {
+        vm.files[USER_CONTEXT as usize].cr = source_value;
+    } else {
+        return Err(VmError::InvalidRomImage(format!(
+            "TKR: invalid destination register 0x{:02X}",
+            dst.0
+        )));
+    }
     Ok(())
 }
 
@@ -473,7 +525,11 @@ fn shift(vm: &mut VM, instruction: &Instruction, op: ShiftOp) -> VmResult<()> {
                     value & sign_bit(width) != 0
                 };
                 let result = if amount >= width_bits {
-                    if value & sign_bit(width) != 0 { mask_for_width(width) } else { 0 }
+                    if value & sign_bit(width) != 0 {
+                        mask_for_width(width)
+                    } else {
+                        0
+                    }
                 } else {
                     let signed = match width {
                         1 => (value as u8 as i8 as i32) as u32,
@@ -490,8 +546,7 @@ fn shift(vm: &mut VM, instruction: &Instruction, op: ShiftOp) -> VmResult<()> {
             if n == 0 {
                 (value, false)
             } else {
-                let result =
-                    ((value << n) | (value >> (width_bits - n))) & mask_for_width(width);
+                let result = ((value << n) | (value >> (width_bits - n))) & mask_for_width(width);
                 (result, false)
             }
         }
@@ -500,8 +555,7 @@ fn shift(vm: &mut VM, instruction: &Instruction, op: ShiftOp) -> VmResult<()> {
             if n == 0 {
                 (value, false)
             } else {
-                let result =
-                    ((value >> n) | (value << (width_bits - n))) & mask_for_width(width);
+                let result = ((value >> n) | (value << (width_bits - n))) & mask_for_width(width);
                 (result, false)
             }
         }
@@ -519,34 +573,40 @@ fn shift(vm: &mut VM, instruction: &Instruction, op: ShiftOp) -> VmResult<()> {
 }
 
 fn mmap_instruction(vm: &mut VM, instruction: &Instruction) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
-    let virt_addr = read_register(vm, expect_register(&instruction.arguments[0])?)?;
-    let phys_addr = read_register(vm, expect_register(&instruction.arguments[1])?)?;
-    let size = read_source_value(vm, &instruction.arguments[2])?;
-    let context = vm.cr;
-    vm.bus.mmap(context, virt_addr, phys_addr, size, bus::perm::READ | bus::perm::WRITE)
+    let virt_page = read_register(vm, expect_register(&instruction.arguments[0])?)?;
+    let phys_page = read_register(vm, expect_register(&instruction.arguments[1])?)?;
+    let page_count = read_source_value(vm, &instruction.arguments[2])?;
+    let context = vm.mr;
+    vm.bus.mmap(
+        context,
+        virt_page,
+        phys_page,
+        page_count,
+        bus::perm::READ | bus::perm::WRITE,
+    )
 }
 
 fn munmap_instruction(vm: &mut VM, instruction: &Instruction) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
-    let virt_addr = read_register(vm, expect_register(&instruction.arguments[0])?)?;
-    let size = read_source_value(vm, &instruction.arguments[1])?;
-    let context = vm.cr;
-    vm.bus.munmap(context, virt_addr, size)
+    let virt_page = read_register(vm, expect_register(&instruction.arguments[0])?)?;
+    let page_count = read_source_value(vm, &instruction.arguments[1])?;
+    let context = vm.mr;
+    vm.bus.munmap(context, virt_page, page_count)
 }
 
 fn mprotect_instruction(vm: &mut VM, instruction: &Instruction) -> VmResult<()> {
-    if vm.active != 0 {
+    if vm.active != KERNEL_CONTEXT as usize {
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
-    let virt_addr = read_register(vm, expect_register(&instruction.arguments[0])?)?;
+    let virt_page = read_register(vm, expect_register(&instruction.arguments[0])?)?;
     let perms = read_register(vm, expect_register(&instruction.arguments[1])?)? as u8;
-    let context = vm.cr;
-    vm.bus.mprotect(context, virt_addr, perms)
+    let context = vm.mr;
+    vm.bus.mprotect(context, virt_page, perms)
 }
 
 fn port_device(vm: &VM, port: u32) -> VmResult<Rc<dyn PortMappedDevice>> {
@@ -567,10 +627,7 @@ fn add_values(lhs: u32, rhs: u32, width: u8) -> (u32, bool) {
 }
 
 fn sub_values(lhs: u32, rhs: u32, width: u8) -> (u32, bool) {
-    (
-        lhs.wrapping_sub(rhs) & mask_for_width(width),
-        rhs > lhs,
-    )
+    (lhs.wrapping_sub(rhs) & mask_for_width(width), rhs > lhs)
 }
 
 fn set_arithmetic_flags(vm: &mut VM, result: u32, width: u8, carry: bool) {

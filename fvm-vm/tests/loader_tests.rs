@@ -17,7 +17,7 @@ use fvm_vm::{
 const PAGE_SIZE: u32 = 4096;
 const STACK_BASE: u32 = 0xFFC0_0000;
 const STACK_TOP: u32 = 0xFFFF_FFFF;
-const STACK_FRAME_SIZE: u32 = 73;
+const STACK_FRAME_SIZE: u32 = 77;
 
 static NEXT_ROM_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -116,7 +116,7 @@ fn initialization_maps_sections_patches_relocations_and_sets_kernel_state() {
     let vm = build_vm(&rom.path, Vec::new());
 
     assert_eq!(vm.active, 0);
-    assert_eq!(vm.cr, 0);
+    assert_eq!(vm.files[0].cr, 0);
     assert_eq!(vm.files[0].ip, 0x3000);
     assert_eq!(vm.files[0].sp, STACK_TOP);
     assert_eq!(vm.files[1].ip, 0);
@@ -171,7 +171,7 @@ fn step_delivers_fetch_bus_fault_through_interrupt_vector() {
     assert_eq!(vm.files[0].ip, handler);
     assert_eq!(vm.files[0].sp, STACK_TOP - STACK_FRAME_SIZE);
     assert_eq!(vm.bus.read_byte(vm.files[0].sp).unwrap(), 0);
-    assert_eq!(vm.bus.read_u32(vm.files[0].sp + 5).unwrap(), 0x1234_5001);
+    assert_eq!(vm.bus.read_u32(vm.files[0].sp + 9).unwrap(), 0x1234_5001);
 }
 
 #[test]

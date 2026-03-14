@@ -1,6 +1,6 @@
 # Register and stack test
 # Run with:
-#   just asm-exec '{"mem_size":16777216,"rom":"target/examples/reg.fo","devices":[]}'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/reg.fo", devices: [])'
 .code
 main:
 MOV rw0, 42

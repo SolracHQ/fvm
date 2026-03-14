@@ -24,43 +24,72 @@ The foundations are mostly in place. The hard work is far from done.
 
 ```mermaid
 graph TD
-    VMCORE["VM Core"]
-    BUS["Memory Bus (64 KB)"]
+    VMCORE["VM Core<br/>(Kernel & User Modes)"]
+    BUS["Memory Bus<br/>(Virtual Address Translation)"]
+    DEVICES["Memory-Mapped Devices"]
     PORTS["I/O Ports (256)"]
 
-    RODATA["0x0000: .rodata (Read)"]
-    CODE["rodataEnd: .code (Read, Execute)"]
-    DATA["codeEnd: .data (Read, Write)"]
-    STACK["0xF000..0xFFFF: stack (Read, Write)"]
+    DEVTABLE["Device Table (ROM)"]
+    FAULT["Fault Info Region (ROM)"]
+    RODATA[".rodata (ROM)"]
+    CODE[".code (ROM+Execute)"]
+    DATA[".data (RAM)"]
+    STACK["Stack (RAM)<br/>0xFFC00000..0xFFFFFFFF"]
 
-    PORTDEV["Port Devices"]
+    PORTDEV["Port-Mapped Devices"]
 
-    VMCORE -->|"fetch / read / write"| BUS
+    VMCORE -->|"Virtual Address"| BUS
     VMCORE -->|"IN / OUT"| PORTS
-    BUS --> RODATA
-    BUS --> CODE
-    BUS --> DATA
-    BUS --> STACK
+    BUS -->|"Page Translation"| DEVICES
+    DEVICES --> DEVTABLE
+    DEVICES --> FAULT
+    DEVICES --> RODATA
+    DEVICES --> CODE
+    DEVICES --> DATA
+    DEVICES --> STACK
     PORTS --> PORTDEV
 ```
 
 ### VM state
 
-- 16 general-purpose 16-bit registers (`r0`..`r15`), with byte-lane access via `r0l` / `r0h`
-- `sp` (stack pointer), also 16-bit, writable like any general register
+- 16 general-purpose 32-bit registers per mode (`rw0`..`rw15`), with narrower views:
+  - `rh0`..`rh15`: 16-bit low half of each register
+  - `rb0`..`rb15`: 8-bit low byte of each register
+  - Writing a narrower view does not touch bits above it; use `ZEXT` or `SEXT` to promote
+- `sp` (stack pointer), 32-bit, writable like any general register
+- `cr` (context register), 32-bit, identifies the address space for virtual translation
+- `ip` (instruction pointer), 32-bit, not directly writable by general instructions
+- `mr` (mapping register), 32-bit privileged register for memory mapping operations
 - Zero, carry, and negative flags
-- privilege state plus a VM-resident interrupt vector table and saved interrupt context
-- Opcode dispatch through a static jump table; each entry carries the mnemonic string and the handler proc
+- Dual register files: kernel mode and user mode, switching atomically with `DPL`
+- VM-resident interrupt vector table (256 entries) and per-entry saved context
+- Opcode dispatch through a static jump table; each entry carries the mnemonic string and the handler function
 
 ### Memory bus
 
-The bus owns the full 64 KB backing array and a list of regions that partition the address space. Each region carries a permission set: `Read`, `Write`, `Execute`. The bus enforces permissions on every access and returns an error for unmapped addresses or permission violations. The VM turns those faults into interrupt 1 when a handler is installed; otherwise it halts.
+Configurable address space (default 16 MiB) composed of physical regions, each backed by a RAM device or memory-mapped device. No unmapped virtual addresses without fault; all accesses go through the bus which translates using the active context CR and enforces permissions.
 
-Peripheral devices attach to regions via `deviceRead`/`deviceWrite` callbacks; the bus delegates to them instead of touching the backing array.
+Virtual layout at startup (per context):
+
+- Device table and fault info region (ROM)
+- `.rodata` section (ROM)
+- `.code` section (ROM + Execute)
+- `.data` section (RAM)
+- Stack at fixed virtual address `0xFFC00000..0xFFFFFFFF` (RAM)
+
+Each section aligns to 4 KB page boundaries. Pages carry permission bits: Read, Write, Execute. Violations raise interrupt 1.
+
+Virtual address translation uses per-context page tables maintained by the bus in host memory. The `MMAP`, `MUNMAP`, and `MPROTECT` instructions operate on the context in `mr` (mapping register), not the currently active `cr`.
 
 ### I/O ports
 
-256 independent byte-addressable ports, accessed with `IN` and `OUT`. Each port has an independent device attached. The CLI `--map` flag wires ports to files or stdio at startup.
+256 independent byte-addressable ports, accessed with `IN` and `OUT`. Each port has an independent device attached. Port devices include:
+
+- Decimal I/O: reads/writes decimal integers (human-friendly debugging)
+- Hex I/O: reads/writes hexadecimal bytes one per line
+- Raw I/O: reads/writes raw binary data
+
+Each device routes to an input/output stream configured at startup (stdin, stdout, stderr, or a file).
 
 ## Instruction set
 
@@ -83,18 +112,18 @@ All jump and call instructions come in two forms: an immediate address/label ope
 ## Assembly syntax
 
 ```asm
-# comment
+# This is a comment
 
 .rodata
     msg:   db "Hello", 0      # string bytes, null must be explicit
-    table: dw 42, 0x1234      # 16-bit words, big-endian
+    table: dw 0x12345678      # 32-bit words, big-endian
 
 .code
 main:
-    MOV  r0, msg              # r0 = address of msg (label as imm16)
-    MOV  r1l, 'A'             # char literal into byte lane
-    LOAD r1l, r0              # load byte at address r0 into r1l
-    OUT  0, r1l               # write byte to port 0
+    MOV  rw0, msg             # rw0 = address of msg (label as imm32)
+    MOV  rb0, 'A'             # char literal into byte lane
+    LOAD rb0, rw0             # load byte at address rw0 into rb0
+    OUT  0, rb0               # write byte to port 0
     CALL print
     HALT
 
@@ -105,52 +134,65 @@ print:
     counter: dw 0             # mutable initialized word
 ```
 
+Registers are 32-bit with three views sharing the same storage:
+
+- `rw0`..`rw15`: full 32-bit general-purpose registers
+- `rh0`..`rh15`: 16-bit low half of each `rw` register
+- `rb0`..`rb15`: 8-bit low byte of each `rh` register
+
+Writing to `rb0` does not modify bits above the low byte. Mixing views of different widths in a single instruction is an error; use `ZEXT` or `SEXT` to promote first.
+
 Local labels scope to the preceding global label, so `.loop` under `multiply:` is `multiply.loop` internally and does not conflict with `.loop` anywhere else.
 
 ## Running
 
 ```bash
-# assemble and run directly (no object file written)
-just asm examples/io.fa
-just asm examples/interrupts.fa
+# Assemble an example into a .fo object file
+just asm examples/io.fa --output target/examples/io.fo
 
-# with full debug output
-just asm examples/io.fa --debug-level lvlDebug
+# Run a .fo object file with the default 16 MB memory and decimal I/O on port 0
+just run target/examples/io.fo
 
-# single-step mode, prints registers each cycle
-just asm examples/io.fa --step
+# Run with a RON config file for custom setup
+just asm-exec config.ron
 
-# map port 0 to stdout in hex repr
-just asm examples/io.fa --map "0:::hex"
+# Inline RON config with human-readable memory size
+just asm-exec '(
+  mem_size: "256mb",
+  rom: "target/examples/io.fo",
+  devices: [
+    (type: "decimal_io", port: 0, input: "stdin", output: "stdout"),
+  ],
+)'
 
-# map port 0 to a file for input
-just asm examples/io.fa --map "0:data.bin:in:raw"
+# Equivalent using raw byte counts (if preferred)
+just asm-exec '(
+  mem_size: 268435456,
+  rom: "target/examples/io.fo",
+  devices: [],
+)'
 
-# assemble to a .fo object file
-just fvm assemble examples/io.fa
-
-# run a .fo object file
-just run examples/io.fo --map "0:::hex"
+# Combine assembler and VM run in one step
+just asm-exec '(
+  mem_size: "128mb",
+  rom: "target/examples/fibo.fo",
+  devices: [
+    (type: "decimal_io", port: 0, input: "stdin", output: "stdout"),
+  ],
+)'
 ```
 
-Port map format: `port:path:mode:repr`
-
-- `port`: 0-255, required
-- `path`: file path, or `stdin`/`stdout`/`stderr`; defaults to stdin for `in` mode and stdout for `out` mode
-- `mode`: `in`, `out`, or `both`; defaults to `both`
-- `repr`: `raw` (binary) or `hex` (one `0xNN` line per byte); defaults to `raw`
+Memory sizes can be specified as human-readable strings like `"128mb"`, `"2gb"`, `"512kb"` or as raw byte counts. Supported suffixes: `b` (bytes), `kb`, `mb`, `gb`, `tb`. Sizes are case-insensitive and leading/trailing whitespace is ignored.
 
 ## Development
 
 ```bash
-just build    # compile to ./bin/fvm
-just test     # run tests
+just build    # compile the Rust workspace
+just test     # run all Rust tests
 just clean    # remove build artifacts
 ```
 
-Tbh the tests are mostly vibecoded; writing tests is not my strongest suit. In practice I test by running examples with `--debug-level lvlDebug`, stepping through cycles with `--step`, or checking output with `--map "0:::hex"`.
-
-The interrupt path now has automated coverage too, including an assembled end-to-end example in [examples/interrupts.fa](examples/interrupts.fa).
+The test suite includes unit tests for the assembler, VM core, and integration tests. Interrupt handling has automated coverage via [examples/interrupts.fa](examples/interrupts.fa).
 
 ## License
 

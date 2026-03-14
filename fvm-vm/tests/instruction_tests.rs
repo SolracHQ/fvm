@@ -12,12 +12,10 @@ use std::{
 };
 
 use fvm_assembler::assemble_source;
-use fvm_vm::{
-    vm::{
-        VM,
-        config::{DeviceConfig, GeneralDeviceConfig, VmConfig},
-        flags::Flag,
-    },
+use fvm_vm::vm::{
+    VM,
+    config::{DeviceConfig, GeneralDeviceConfig, VmConfig},
+    flags::Flag,
 };
 
 const MAIN_RAM_SIZE: u32 = 8 * 1024 * 1024;
@@ -34,8 +32,12 @@ impl TempFile {
     fn new(ext: &str) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         Self {
-            path: std::env::temp_dir()
-                .join(format!("fvm-insn-test-{}-{}.{}", std::process::id(), id, ext)),
+            path: std::env::temp_dir().join(format!(
+                "fvm-insn-test-{}-{}.{}",
+                std::process::id(),
+                id,
+                ext
+            )),
         }
     }
 
@@ -314,16 +316,12 @@ fn dpl_in_user_mode_raises_privilege_fault() {
 
 #[test]
 fn mmap_in_user_mode_raises_privilege_fault() {
-    assert_privilege_fault_in_user_mode(
-        "main:\n    MMAP rw0, rw1, 4096\n    HALT\n",
-    );
+    assert_privilege_fault_in_user_mode("main:\n    MMAP rw0, rw1, 4096\n    HALT\n");
 }
 
 #[test]
 fn munmap_in_user_mode_raises_privilege_fault() {
-    assert_privilege_fault_in_user_mode(
-        "main:\n    MUNMAP rw0, 4096\n    HALT\n",
-    );
+    assert_privilege_fault_in_user_mode("main:\n    MUNMAP rw0, 4096\n    HALT\n");
 }
 
 #[test]
@@ -337,16 +335,8 @@ fn tkr_in_user_mode_raises_privilege_fault() {
 }
 
 #[test]
-fn cr_write_in_user_mode_raises_privilege_fault() {
-    // MOV cr, rw0 in user mode should raise interrupt 6
-    assert_privilege_fault_in_user_mode("main:\n    MOV cr, rw0\n    HALT\n");
-}
-
-#[test]
 fn mprotect_in_user_mode_raises_privilege_fault() {
-    assert_privilege_fault_in_user_mode(
-        "main:\n    MPROTECT rw0, rb1\n    HALT\n",
-    );
+    assert_privilege_fault_in_user_mode("main:\n    MPROTECT rw0, rb1\n    HALT\n");
 }
 
 #[test]
@@ -367,6 +357,31 @@ fn tur_and_tkr_transfer_values_between_register_files() {
     );
     assert_eq!(vm.files[0].regs[1], 42); // kernel rw1 got the user value back
     assert_eq!(vm.files[1].regs[0], 42); // user rw0 was set by TKR
+}
+
+#[test]
+fn tkr_sets_user_cr() {
+    let vm = run_vm("main:\n    MOV rw0, 5\n    TKR cr, rw0\n    HALT\n", vec![]);
+    assert_eq!(vm.files[1].cr, 5);
+}
+
+#[test]
+fn tkr_sets_user_ip() {
+    let vm = run_vm(
+        "main:\n    MOV rw0, 0x12345678\n    TKR ip, rw0\n    HALT\n",
+        vec![],
+    );
+    assert_eq!(vm.files[1].ip, 0x12345678);
+}
+
+#[test]
+fn tur_reads_user_cr() {
+    let vm = run_vm(
+        "main:\n    MOV rw0, 7\n    TKR cr, rw0\n    TUR rw1, cr\n    HALT\n",
+        vec![],
+    );
+    assert_eq!(vm.files[1].cr, 7);
+    assert_eq!(vm.files[0].regs[1], 7);
 }
 
 #[test]
@@ -393,29 +408,27 @@ fn sie_sets_interrupt_vector_entry() {
 #[test]
 fn cr_reads_as_kernel_context_after_initialization() {
     let vm = run_vm("main:\n    MOV rw0, cr\n    HALT\n", vec![]);
-    assert_eq!(vm.files[0].regs[0], 0); // kernel context = 0
-    assert_eq!(vm.cr, 0);
+    assert_eq!(vm.files[0].regs[0], 0); // cr read into rw0 = kernel context = 0
+    assert_eq!(vm.files[0].cr, 0);
 }
 
 #[test]
-fn cr_can_be_written_and_read_back_in_kernel_mode() {
-    let vm = run_vm(
-        "main:\n    MOV rw0, 1\n    MOV cr, rw0\n    MOV rw1, cr\n    HALT\n",
-        vec![],
-    );
-    assert_eq!(vm.cr, 1);
-    assert_eq!(vm.files[0].regs[1], 1);
+fn cr_write_blocked_via_mov_by_assembler() {
+    // MOV cr, rw0 is now rejected at assembly time in all modes.
+    let result = fvm_assembler::assemble_source("main:\n    MOV cr, rw0\n    HALT\n");
+    assert!(result.is_err(), "assembler should reject MOV cr, rw");
 }
 
 #[test]
 fn mmap_instruction_creates_accessible_virtual_region() {
-    // Map physical 0x300000 to virtual 0xA00000, write a word, read it back.
+    // Map physical page 0x300 to virtual page 0xA00, write a word, read it back.
     let source = r#"
 .code
 main:
+    MOV rw0, 0xA00
+    MOV rw1, 0x300
+    MMAP rw0, rw1, 1
     MOV rw0, 0x00A00000
-    MOV rw1, 0x00300000
-    MMAP rw0, rw1, 4096
     MOV rw2, 0xDEADBEEF
     STORE rw0, rw2
     LOAD rw3, rw0
@@ -434,10 +447,10 @@ fn munmap_instruction_removes_virtual_mapping() {
     let source = r#"
 .code
 main:
-    MOV rw0, 0x00A00000
-    MOV rw1, 0x00300000
-    MMAP rw0, rw1, 4096
-    MUNMAP rw0, 4096
+    MOV rw0, 0xA00
+    MOV rw1, 0x300
+    MMAP rw0, rw1, 1
+    MUNMAP rw0, 1
     HALT
 "#;
     let vm = run_vm(source, vec![]);
@@ -447,7 +460,7 @@ main:
         vm.bus.read_byte(0x00A00000).is_err(),
         "unmapped virtual address should not be accessible"
     );
-    // But the physical memory is still reachable via another mapping or physical write.
+    // But the physical memory is still reachable via physical write.
     vm.bus.write_physical_byte(0x00300000, 0xAB).unwrap();
 }
 
@@ -457,9 +470,9 @@ fn mprotect_instruction_changes_page_to_read_only() {
     let source = r#"
 .code
 main:
-    MOV rw0, 0x00A00000
-    MOV rw1, 0x00300000
-    MMAP rw0, rw1, 4096
+    MOV rw0, 0xA00
+    MOV rw1, 0x300
+    MMAP rw0, rw1, 1
     MOV rb2, 0x01
     MPROTECT rw0, rb2
     HALT
@@ -477,14 +490,15 @@ main:
 
 #[test]
 fn mmap_with_register_size_operand_maps_correctly() {
-    // MMAP rw0, rw1, rw2 (all-register form), mapping 4096 bytes.
+    // MMAP rw0, rw1, rw2 (all-register form), mapping 1 page.
     let source = r#"
 .code
 main:
-    MOV rw0, 0x00B00000
-    MOV rw1, 0x00310000
-    MOV rw2, 4096
+    MOV rw0, 0xB00
+    MOV rw1, 0x310
+    MOV rw2, 1
     MMAP rw0, rw1, rw2
+    MOV rw0, 0x00B00000
     MOV rw3, 0xCAFEBABE
     STORE rw0, rw3
     LOAD rw4, rw0
@@ -513,10 +527,7 @@ fn not_inverts_all_bits_of_32bit_register() {
 #[test]
 fn not_inverts_only_low_byte_for_rb_view() {
     // MOV rb0, 0xAA → rw0 = 0x000000AA. NOT rb0 → rb0 = 0x55, upper bits unchanged.
-    let vm = run_vm(
-        "main:\n    MOV rb0, 0xAA\n    NOT rb0\n    HALT\n",
-        vec![],
-    );
+    let vm = run_vm("main:\n    MOV rb0, 0xAA\n    NOT rb0\n    HALT\n", vec![]);
     assert_eq!(vm.files[0].regs[0] & 0xFF, 0x55);
     assert_eq!(vm.files[0].regs[0] & 0xFFFF_FF00, 0); // upper bytes still zero
 }
@@ -595,7 +606,8 @@ fn out_via_raw_device_writes_ascii_bytes() {
         output: output.path().to_string_lossy().into_owned(),
         general: GeneralDeviceConfig::default(),
     }];
-    let source = "main:\n    MOV rb0, 'H'\n    OUT 0, rb0\n    MOV rb0, 'i'\n    OUT 0, rb0\n    HALT\n";
+    let source =
+        "main:\n    MOV rb0, 'H'\n    OUT 0, rb0\n    MOV rb0, 'i'\n    OUT 0, rb0\n    HALT\n";
     let vm = run_vm(source, devices);
     drop(vm);
     let text = fs::read_to_string(output.path()).expect("failed to read output");

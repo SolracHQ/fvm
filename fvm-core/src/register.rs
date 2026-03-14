@@ -74,6 +74,10 @@ impl RegisterEncoding {
         self.view() == Self::VIEW_CR
     }
 
+    pub fn is_privileged(self) -> bool {
+        matches!(self.view(), Self::VIEW_CR | Self::VIEW_IP | Self::VIEW_MR)
+    }
+
     pub fn width_bytes(self) -> u8 {
         match self.view() {
             Self::VIEW_RW => 4,
@@ -91,7 +95,13 @@ impl RegisterEncoding {
         let view = byte & Self::VIEW_MASK;
         let valid_view = matches!(
             view,
-            Self::VIEW_RW | Self::VIEW_RH | Self::VIEW_RB | Self::VIEW_SP | Self::VIEW_CR | Self::VIEW_IP | Self::VIEW_MR
+            Self::VIEW_RW
+                | Self::VIEW_RH
+                | Self::VIEW_RB
+                | Self::VIEW_SP
+                | Self::VIEW_CR
+                | Self::VIEW_IP
+                | Self::VIEW_MR
         );
         if valid_view { Some(Self(byte)) } else { None }
     }

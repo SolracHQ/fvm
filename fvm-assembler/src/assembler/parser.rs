@@ -114,6 +114,14 @@ fn parse_register(tok: &Token) -> Option<RegisterEncoding> {
         return Some(RegisterEncoding::cr());
     }
 
+    if name == "ip" {
+        return Some(RegisterEncoding::ip());
+    }
+
+    if name == "mr" {
+        return Some(RegisterEncoding::mr());
+    }
+
     // rw<n>, rh<n>, rb<n>
     let (prefix, rest): (&str, &str) = if let Some(r) = name.strip_prefix("rw") {
         ("rw", r)
@@ -501,11 +509,32 @@ fn parse_instruction(
                     "MOV: expected destination register",
                 )
             })?;
+            if dst.is_ip() {
+                return Err(AssemblerError::parse(
+                    dst_tok.line,
+                    dst_tok.col,
+                    "MOV: ip is not a valid destination; use TKR ip, rw",
+                ));
+            }
+            if dst.is_cr() {
+                return Err(AssemblerError::parse(
+                    dst_tok.line,
+                    dst_tok.col,
+                    "MOV: cr is not a valid destination; use TKR cr, rw",
+                ));
+            }
             parser.advance();
             parser.expect_comma()?;
 
             let src_tok = parser.peek(0).clone();
             if let Some(src_reg) = parse_register(&src_tok) {
+                if src_reg.is_ip() {
+                    return Err(AssemblerError::parse(
+                        src_tok.line,
+                        src_tok.col,
+                        "MOV: ip is not a valid source; use TUR rw, ip",
+                    ));
+                }
                 parser.advance();
                 if dst.width_bytes() != src_reg.width_bytes() && !dst.is_sp() && !src_reg.is_sp() {
                     return Err(AssemblerError::parse(
@@ -875,12 +904,25 @@ fn parse_instruction(
                     format!("{op}: expected destination register"),
                 )
             })?;
-            if !dst.is_rw() {
-                return Err(AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    format!("{op}: destination register must be rw"),
-                ));
+            match op {
+                "TKR" => {
+                    if !dst.is_rw() && !dst.is_ip() && !dst.is_cr() {
+                        return Err(AssemblerError::parse(
+                            dst_tok.line,
+                            dst_tok.col,
+                            "TKR: destination must be rw, ip, or cr",
+                        ));
+                    }
+                }
+                _ => {
+                    if !dst.is_rw() {
+                        return Err(AssemblerError::parse(
+                            dst_tok.line,
+                            dst_tok.col,
+                            "TUR: destination register must be rw",
+                        ));
+                    }
+                }
             }
             parser.advance();
             parser.expect_comma()?;
@@ -893,12 +935,25 @@ fn parse_instruction(
                     format!("{op}: expected source register"),
                 )
             })?;
-            if !src.is_rw() {
-                return Err(AssemblerError::parse(
-                    src_tok.line,
-                    src_tok.col,
-                    format!("{op}: source register must be rw"),
-                ));
+            match op {
+                "TUR" => {
+                    if !src.is_rw() && !src.is_ip() && !src.is_cr() {
+                        return Err(AssemblerError::parse(
+                            src_tok.line,
+                            src_tok.col,
+                            "TUR: source must be rw, ip, or cr",
+                        ));
+                    }
+                }
+                _ => {
+                    if !src.is_rw() {
+                        return Err(AssemblerError::parse(
+                            src_tok.line,
+                            src_tok.col,
+                            "TKR: source register must be rw",
+                        ));
+                    }
+                }
             }
             parser.advance();
 

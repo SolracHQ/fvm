@@ -68,7 +68,10 @@ impl SectionEmitter {
     }
 }
 
-fn emit_data_section(args: &[Argument], section: Section) -> Result<(Vec<Byte>, Vec<RelocationSite>)> {
+fn emit_data_section(
+    args: &[Argument],
+    section: Section,
+) -> Result<(Vec<Byte>, Vec<RelocationSite>)> {
     let mut emitter = SectionEmitter::new(section);
     for arg in args {
         emitter.emit_arg(arg)?;

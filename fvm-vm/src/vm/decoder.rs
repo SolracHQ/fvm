@@ -1,8 +1,5 @@
 use fvm_core::{
-    argument::Argument,
-    instruction::Instruction,
-    opcode::Op,
-    register::RegisterEncoding,
+    argument::Argument, instruction::Instruction, opcode::Op, register::RegisterEncoding,
 };
 
 use crate::{
@@ -14,7 +11,9 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
     let ip = vm.files[vm.active].ip;
 
     let instruction = match opcode {
-        Op::Nop | Op::Halt | Op::Ret | Op::Iret | Op::Dpl => Instruction::new(opcode, none_args(), 0),
+        Op::Nop | Op::Halt | Op::Ret | Op::Iret | Op::Dpl => {
+            Instruction::new(opcode, none_args(), 0)
+        }
 
         Op::Push
         | Op::Pop
@@ -25,7 +24,11 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
         | Op::JcReg
         | Op::JnReg
         | Op::CallReg
-        | Op::IntReg => Instruction::new(opcode, [read_reg(vm, ip, 1)?, Argument::None, Argument::None], 1),
+        | Op::IntReg => Instruction::new(
+            opcode,
+            [read_reg(vm, ip, 1)?, Argument::None, Argument::None],
+            1,
+        ),
 
         Op::Jmp | Op::Jz | Op::Jnz | Op::Jc | Op::Jn | Op::Call => Instruction::new(
             opcode,
@@ -35,7 +38,11 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
 
         Op::IntImm => Instruction::new(
             opcode,
-            [Argument::Inmm8(read_exec_byte(vm, ip, 1)?), Argument::None, Argument::None],
+            [
+                Argument::Inmm8(read_exec_byte(vm, ip, 1)?),
+                Argument::None,
+                Argument::None,
+            ],
             1,
         ),
 
@@ -92,7 +99,11 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
 
         Op::SieRegImm => Instruction::new(
             opcode,
-            [read_reg(vm, ip, 1)?, read_u32_arg(vm, ip, 2)?, Argument::None],
+            [
+                read_reg(vm, ip, 1)?,
+                read_u32_arg(vm, ip, 2)?,
+                Argument::None,
+            ],
             2,
         ),
 
@@ -114,13 +125,21 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
 
         Op::MmapRegRegReg => Instruction::new(
             opcode,
-            [read_reg(vm, ip, 1)?, read_reg(vm, ip, 2)?, read_reg(vm, ip, 3)?],
+            [
+                read_reg(vm, ip, 1)?,
+                read_reg(vm, ip, 2)?,
+                read_reg(vm, ip, 3)?,
+            ],
             3,
         ),
 
         Op::MmapRegRegImm => Instruction::new(
             opcode,
-            [read_reg(vm, ip, 1)?, read_reg(vm, ip, 2)?, read_u32_arg(vm, ip, 3)?],
+            [
+                read_reg(vm, ip, 1)?,
+                read_reg(vm, ip, 2)?,
+                read_u32_arg(vm, ip, 3)?,
+            ],
             3,
         ),
 
@@ -132,7 +151,11 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
 
         Op::MunmapRegImm => Instruction::new(
             opcode,
-            [read_reg(vm, ip, 1)?, read_u32_arg(vm, ip, 2)?, Argument::None],
+            [
+                read_reg(vm, ip, 1)?,
+                read_u32_arg(vm, ip, 2)?,
+                Argument::None,
+            ],
             2,
         ),
 
@@ -141,13 +164,6 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
             [read_reg(vm, ip, 1)?, read_reg(vm, ip, 2)?, Argument::None],
             2,
         ),
-
-        _ => {
-            return Err(VmError::InvalidOpcode {
-                opcode: opcode as u8,
-                address: ip,
-            });
-        }
     };
 
     Ok(instruction)

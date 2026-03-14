@@ -129,25 +129,23 @@ impl Bus {
     pub fn mmap(
         &mut self,
         context: u32,
-        virt_addr: u32,
-        phys_addr: u32,
-        size: u32,
+        virt_page: u32,
+        phys_page: u32,
+        page_count: u32,
         permissions: u8,
     ) -> VmResult<()> {
-        let page_count = size.div_ceil(PAGE_SIZE);
-
         // Resolve all physical pages before mutating self.pages to avoid
         // borrowing self.physical and self.pages simultaneously.
         let mut resolved = Vec::with_capacity(page_count as usize);
         for i in 0..page_count {
-            let (device, device_page_base) = self.resolve_physical(phys_addr + i * PAGE_SIZE)?;
+            let phys_byte_addr = (phys_page + i) * PAGE_SIZE;
+            let (device, device_page_base) = self.resolve_physical(phys_byte_addr)?;
             resolved.push((i, device, device_page_base));
         }
 
         for (i, device, device_page_base) in resolved {
-            let virt_page = (virt_addr >> PAGE_BITS) + i;
             self.pages.insert(
-                page_key(context, virt_page),
+                page_key(context, virt_page + i),
                 PageEntry {
                     device_page_base,
                     device,
@@ -158,25 +156,27 @@ impl Bus {
         Ok(())
     }
 
-    pub fn munmap(&mut self, context: u32, virt_addr: u32, size: u32) -> VmResult<()> {
-        let page_count = size.div_ceil(PAGE_SIZE);
+    pub fn munmap(&mut self, context: u32, virt_page: u32, page_count: u32) -> VmResult<()> {
         for i in 0..page_count {
-            let virt_page = (virt_addr >> PAGE_BITS) + i;
-            if self.pages.remove(&page_key(context, virt_page)).is_none() {
+            if self
+                .pages
+                .remove(&page_key(context, virt_page + i))
+                .is_none()
+            {
                 return Err(VmError::UnmappedAddress {
                     context,
-                    address: virt_addr + i * PAGE_SIZE,
+                    address: (virt_page + i) * PAGE_SIZE,
                 });
             }
         }
         Ok(())
     }
 
-    pub fn mprotect(&mut self, context: u32, virt_addr: u32, permissions: u8) -> VmResult<()> {
-        let key = page_key(context, virt_addr >> PAGE_BITS);
+    pub fn mprotect(&mut self, context: u32, virt_page: u32, permissions: u8) -> VmResult<()> {
+        let key = page_key(context, virt_page);
         let entry = self.pages.get_mut(&key).ok_or(VmError::UnmappedAddress {
             context,
-            address: virt_addr,
+            address: virt_page * PAGE_SIZE,
         })?;
         entry.permissions = permissions;
         Ok(())

@@ -53,11 +53,13 @@ impl PortMappedDevice for RawIo {
 
     fn write_byte(&self, _port: Word, value: Byte) -> VmResult<()> {
         let mut output = self.output.borrow_mut();
-        output.write_all(&[value]).map_err(|e| VmError::DeviceError {
-            device: self.id(),
-            offset: 0,
-            message: format!("write error: {e}"),
-        })?;
+        output
+            .write_all(&[value])
+            .map_err(|e| VmError::DeviceError {
+                device: self.id(),
+                offset: 0,
+                message: format!("write error: {e}"),
+            })?;
         output.flush().map_err(|e| VmError::DeviceError {
             device: self.id(),
             offset: 0,
@@ -75,11 +77,13 @@ impl PortMappedDevice for RawIo {
         let hi = (value >> 8) as u8;
         let lo = value as u8;
         let mut output = self.output.borrow_mut();
-        output.write_all(&[hi, lo]).map_err(|e| VmError::DeviceError {
-            device: self.id(),
-            offset: 0,
-            message: format!("write error: {e}"),
-        })?;
+        output
+            .write_all(&[hi, lo])
+            .map_err(|e| VmError::DeviceError {
+                device: self.id(),
+                offset: 0,
+                message: format!("write error: {e}"),
+            })?;
         output.flush().map_err(|e| VmError::DeviceError {
             device: self.id(),
             offset: 0,

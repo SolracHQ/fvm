@@ -1,6 +1,96 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use fvm_core::types::Word;
+
+/// Parse human-readable memory sizes like "128mb", "2gb", "512kb", or raw bytes as u32.
+fn parse_memory_size<'de, D>(deserializer: D) -> Result<Word, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct MemorySizeVisitor;
+
+    impl<'de> Visitor<'de> for MemorySizeVisitor {
+        type Value = Word;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str(
+                "an integer or human-readable memory size like '128mb', '2gb', '512kb'",
+            )
+        }
+
+        fn visit_u32<E>(self, value: u32) -> Result<Word, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Word, E>
+        where
+            E: de::Error,
+        {
+            if value > u32::MAX as u64 {
+                Err(E::custom("memory size too large for u32"))
+            } else {
+                Ok(value as u32)
+            }
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Word, E>
+        where
+            E: de::Error,
+        {
+            parse_human_readable_size(value).map_err(E::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Word, E>
+        where
+            E: de::Error,
+        {
+            self.visit_str(&value)
+        }
+    }
+
+    deserializer.deserialize_any(MemorySizeVisitor)
+}
+
+fn parse_human_readable_size(input: &str) -> Result<Word, String> {
+    let input = input.trim().to_lowercase();
+
+    let (number_str, suffix) = if let Some(pos) = input.find(|c: char| c.is_alphabetic()) {
+        input.split_at(pos)
+    } else {
+        (input.as_str(), "")
+    };
+
+    let base: u64 = number_str
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid number: '{}'", number_str))?;
+
+    let multiplier: u64 = match suffix.trim() {
+        "" => 1,
+        "b" | "byte" | "bytes" => 1,
+        "kb" | "k" => 1024,
+        "mb" | "m" => 1024 * 1024,
+        "gb" | "g" => 1024 * 1024 * 1024,
+        "tb" | "t" => 1024 * 1024 * 1024 * 1024,
+        _ => return Err(format!("unknown size suffix: '{}'", suffix)),
+    };
+
+    let result = base.saturating_mul(multiplier);
+    if result > u32::MAX as u64 {
+        return Err(format!(
+            "memory size too large: {} (max 4GB)",
+            base.to_string() + suffix
+        ));
+    }
+
+    Ok(result as u32)
+}
 
 /// This is the Core of VM configuration, user will create ron config file and parse it into this struct, then pass it to VM when creating a new instance.
 /// This config will define the memory size of the VM, the devices to be attached, the loacation of the initial rom image
@@ -10,7 +100,8 @@ pub struct VmConfig {
     /// Must exist and be at least 16 MiB to be usable, but can be larger if desired.
     /// Must be a multiple of 4 KiB (4096 bytes) to align with the VM's page size.
     /// In case is not aligned, the VM will round up to the next multiple of 4 KiB and print a warning.
-    #[serde(alias = "main_memory_size")]
+    /// Can be specified as a raw byte count or human-readable format like "128mb", "2gb".
+    #[serde(alias = "main_memory_size", deserialize_with = "parse_memory_size")]
     pub mem_size: Word,
     /// Initial ROM image to load into memory at startup. This is typically the compiled output of the assembler, must follow the fvm binary format.
     /// The VM will load this into the main RAM device after the device mapping table.
@@ -24,9 +115,7 @@ impl VmConfig {
     pub fn parse(source: &str) -> Result<Self, String> {
         serde_json::from_str(source).or_else(|json_error| {
             ron::from_str(source).map_err(|ron_error| {
-                format!(
-                    "failed to parse config as JSON ({json_error}) or RON ({ron_error})"
-                )
+                format!("failed to parse config as JSON ({json_error}) or RON ({ron_error})")
             })
         })
     }
@@ -52,6 +141,8 @@ pub enum DeviceConfig {
     /// For cases where a second RAM device is needed
     Ram {
         /// Size of the RAM device in bytes. Must be a multiple of 4 KiB (4096 bytes) to align with the VM's page size.
+        /// Can be specified as a raw byte count or human-readable format like "128mb", "2gb".
+        #[serde(deserialize_with = "parse_memory_size")]
         size: Word,
         #[serde(default)]
         general: GeneralDeviceConfig,
@@ -116,7 +207,10 @@ mod tests {
         .expect("config should parse");
 
         assert_eq!(config.mem_size, 16 * 1024 * 1024);
-        assert!(matches!(config.devices[0], DeviceConfig::HexIo { port: 0, .. }));
+        assert!(matches!(
+            config.devices[0],
+            DeviceConfig::HexIo { port: 0, .. }
+        ));
     }
 
     #[test]
@@ -137,7 +231,10 @@ mod tests {
         )
         .expect("config should parse");
 
-        assert!(matches!(config.devices[0], DeviceConfig::DecimalIo { port: 1, .. }));
+        assert!(matches!(
+            config.devices[0],
+            DeviceConfig::DecimalIo { port: 1, .. }
+        ));
     }
 
     #[test]
@@ -153,5 +250,57 @@ mod tests {
 
         assert_eq!(config.mem_size, 16 * 1024 * 1024);
         assert_eq!(config.rom, "legacy.fo");
+    }
+
+    #[test]
+    fn parses_human_readable_memory_sizes_ron() {
+        let tests = vec![
+            (r#"(mem_size: "128mb", rom: "test.fo", devices: [])"#, 128 * 1024 * 1024),
+            (r#"(mem_size: "2gb", rom: "test.fo", devices: [])"#, 2 * 1024 * 1024 * 1024),
+            (r#"(mem_size: "512kb", rom: "test.fo", devices: [])"#, 512 * 1024),
+            (r#"(mem_size: "256mb", rom: "test.fo", devices: [])"#, 256 * 1024 * 1024),
+        ];
+
+        for (ron_str, expected) in tests {
+            let config = VmConfig::parse(ron_str).expect("config should parse");
+            assert_eq!(config.mem_size, expected);
+        }
+    }
+
+    #[test]
+    fn parses_human_readable_memory_sizes_with_variants() {
+        let tests = vec![
+            (r#"(mem_size: "128 mb", rom: "test.fo", devices: [])"#, 128 * 1024 * 1024),
+            (r#"(mem_size: "2 GB", rom: "test.fo", devices: [])"#, 2 * 1024 * 1024 * 1024),
+            (r#"(mem_size: "512 KB", rom: "test.fo", devices: [])"#, 512 * 1024),
+        ];
+
+        for (ron_str, expected) in tests {
+            let config = VmConfig::parse(ron_str).expect("config should parse");
+            assert_eq!(config.mem_size, expected);
+        }
+    }
+
+    #[test]
+    fn device_ram_supports_human_readable_size() {
+        let config = VmConfig::parse(
+            r#"(
+                mem_size: "16mb",
+                rom: "test.fo",
+                devices: [
+                    (
+                        type: "ram",
+                        size: "256mb",
+                    ),
+                ],
+            )"#,
+        )
+        .expect("config should parse");
+
+        assert_eq!(config.mem_size, 16 * 1024 * 1024);
+        assert!(matches!(
+            config.devices[0],
+            DeviceConfig::Ram { size: 268435456, .. } // 256mb
+        ));
     }
 }
