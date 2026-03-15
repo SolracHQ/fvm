@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "fvm-vm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "fvm-assembler",
