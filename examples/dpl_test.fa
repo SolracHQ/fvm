@@ -11,6 +11,14 @@
   msg_syscall:      db "kernel: got syscall from user, rw0=", 0
   msg_done:         db "kernel: returned from user\n", 0
   newline:          db "\n", 0
+  msg_mmap_loader:  db "  mmap loader info: OK\n", 0
+  msg_mprot_loader: db "  mprotect loader info: OK\n", 0
+  msg_mmap_rodata:  db "  mmap rodata: OK\n", 0
+  msg_mprot_rodata: db "  mprotect rodata: OK\n", 0
+  msg_mmap_code:    db "  mmap code: OK\n", 0
+  msg_mprot_code:   db "  mprotect code: OK\n", 0
+  msg_mmap_stack:   db "  mmap stack: OK\n", 0
+  msg_mprot_stack:  db "  mprotect stack: OK\n", 0
 
 .code
 
@@ -48,6 +56,8 @@ main:
   MMAP rw0, rw1, 1
   MOV rb2, 0b001         # READ
   MPROTECT rw0, 1, rb2
+  MOV rw1, msg_mmap_loader
+  CALL print_str
 
   # rodata: read-only
   MOV rw0, 1
@@ -55,6 +65,8 @@ main:
   MMAP rw0, rw1, 1
   MOV rb2, 0b001         # READ
   MPROTECT rw0, 1, rb2
+  MOV rw1, msg_mmap_rodata
+  CALL print_str
 
   # code: read + execute
   MOV rw0, 2
@@ -62,19 +74,24 @@ main:
   MMAP rw0, rw1, 1
   MOV rb2, 0b101         # READ | EXECUTE
   MPROTECT rw0, 1, rb2
+  MOV rw1, msg_mmap_code
+  CALL print_str
 
   # stack: read + write
   MOV rw0, 0xFFC00
   MOV rw1, 0xC00
-  MOV rw2, 0x400
-  MMAP rw0, rw1, rw2
+  MOV rw3, 0x400        # Use rw3 for page_count instead of rw2
+  MMAP rw0, rw1, rw3
   MOV rb2, 0b011         # READ | WRITE
-  MPROTECT rw0, rw2, rb2
+  MPROTECT rw0, rw3, rb2  # Use rw3 here too
+  MOV rw1, msg_mmap_stack
+  CALL print_str
 
   MOV mr, 0              # restore mapping target
 
   # Set up user register file
   MOV rw0, user_entry
+  OUT 1, rw0     
   TKR ip, rw0            # user ip = user_entry
   MOV rw0, 0xFFFFFFFF
   TKR sp, rw0            # user sp = top of stack

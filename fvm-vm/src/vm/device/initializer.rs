@@ -3,6 +3,7 @@ use std::io;
 use std::rc::Rc;
 
 use crate::error::VmError;
+use crate::vm::bus::PAGE_SIZE;
 use crate::vm::config::{DeviceConfig, VmConfig};
 use crate::vm::device::debug::{DecimalIo, HexIo, RawIo};
 use fvm_core::types::Word;
@@ -14,7 +15,6 @@ pub struct InitializedDevices {
 }
 
 fn round_up_to_page(size: Word) -> Word {
-    const PAGE_SIZE: Word = 4096;
     size.div_ceil(PAGE_SIZE) * PAGE_SIZE
 }
 

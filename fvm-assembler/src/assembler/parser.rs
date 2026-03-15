@@ -1080,8 +1080,13 @@ fn parse_instruction(
             }
             parser.advance();
 
+            let opcode = match &page_count {
+                Argument::Register(_) => Op::MprotectRegRegRb,
+                _ => Op::MprotectRegImmRb,
+            };
+
             Ok(inst!(
-                Op::Mprotect,
+                opcode,
                 Argument::Register(virt),
                 page_count,
                 Argument::Register(perms)

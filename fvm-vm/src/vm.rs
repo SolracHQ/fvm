@@ -76,14 +76,25 @@ impl VM {
     fn fetch(&mut self) -> VmResult<Op> {
         let address = self.files[self.active].ip;
         let byte = self.bus.fetch_byte(address)?;
-        Op::try_from(byte).map_err(|_| VmError::InvalidOpcode {
-            opcode: byte,
-            address,
+        Op::try_from(byte).map_err(|_| {
+            VmError::FetchError {
+                address,
+                reason: format!("0x{:02X} is not a valid opcode byte", byte),
+            }
         })
     }
 
     fn decode(&mut self, opcode: Op) -> VmResult<Instruction> {
-        decoder::decode_instruction(self, opcode)
+        let ip = self.files[self.active].ip;
+        decoder::decode_instruction(self, opcode).map_err(|e| match e {
+            VmError::DecodeError { .. } | VmError::FetchError { .. } => e,
+            other => VmError::DecodeError {
+                address: ip,
+                opcode: opcode as u8,
+                arg_index: 0,
+                reason: other.to_string(),
+            },
+        })
     }
 
     fn execute(&mut self, instruction: Instruction) -> VmResult<()> {
@@ -161,9 +172,10 @@ impl VM {
         self.bus.set_context(self.files[0].cr);
 
         if self.pending_interrupt == Some(1) && interrupt_index == 1 {
-            self.halted = true;
-            println!("Double bus fault detected, halting VM");
-            return Ok(());
+            return Err(VmError::DoubleFault {
+                first_interrupt: 1,
+                second_interrupt: interrupt_index,
+            });
         }
 
         self.pending_interrupt = Some(interrupt_index);
@@ -181,8 +193,10 @@ impl VM {
 
         let handler = self.ivt[interrupt_index as usize];
         if handler == 0 {
-            self.halted = true;
-            return Ok(());
+            return Err(VmError::NoInterruptHandler {
+                interrupt: interrupt_index,
+                address: resume_ip,
+            });
         }
 
         self.files[0].ip = handler;
@@ -272,6 +286,7 @@ fn opcode_controls_ip(opcode: Op) -> bool {
             | Op::Iret
             | Op::IntImm
             | Op::IntReg
+            | Op::Dpl
     )
 }
 

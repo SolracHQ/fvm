@@ -51,6 +51,26 @@ pub enum VmError {
     #[error("Invalid opcode 0x{opcode:02X} at address 0x{address:08X}")]
     InvalidOpcode { opcode: u8, address: u32 },
 
+    #[error("Fetch failed at address 0x{address:08X}: {reason}")]
+    FetchError { address: u32, reason: String },
+
+    #[error("Decode error at address 0x{address:08X}: opcode=0x{opcode:02X}, argument #{arg_index}: {reason}")]
+    DecodeError {
+        address: u32,
+        opcode: u8,
+        arg_index: u8,
+        reason: String,
+    },
+
+    #[error("Double fault: interrupt {second_interrupt:?} while handling {first_interrupt:?}")]
+    DoubleFault {
+        first_interrupt: u8,
+        second_interrupt: u8,
+    },
+
+    #[error("No interrupt handler registered for interrupt {interrupt:?} at address 0x{address:08X}")]
+    NoInterruptHandler { interrupt: u8, address: u32 },
+
     #[error("Core error: {0}")]
     CoreErrors(#[from] fvm_core::error::FvmError),
 }
