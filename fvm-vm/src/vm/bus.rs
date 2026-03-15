@@ -126,6 +126,16 @@ impl Bus {
         Ok(())
     }
 
+    pub fn read_physical_byte(&self, phys_addr: u32) -> VmResult<u8> {
+        let (device, offset) = self.resolve_physical(phys_addr)?;
+        device.read_byte(offset)
+    }
+
+    pub fn read_physical_u32(&self, phys_addr: u32) -> VmResult<u32> {
+        let (device, offset) = self.resolve_physical(phys_addr)?;
+        device.read_word(offset)
+    }
+
     pub fn mmap(
         &mut self,
         context: u32,
@@ -138,7 +148,12 @@ impl Bus {
         // borrowing self.physical and self.pages simultaneously.
         let mut resolved = Vec::with_capacity(page_count as usize);
         for i in 0..page_count {
-            let phys_byte_addr = (phys_page + i) * PAGE_SIZE;
+            let phys_byte_addr = (phys_page + i)
+                .checked_mul(PAGE_SIZE)
+                .ok_or(VmError::Layout(format!(
+                    "MMAP: physical page address overflow: phys_page={:08X} + i={:08X}, PAGE_SIZE={:08X}",
+                    phys_page, i, PAGE_SIZE
+                )))?;
             let (device, device_page_base) = self.resolve_physical(phys_byte_addr)?;
             resolved.push((i, device, device_page_base));
         }
@@ -163,22 +178,36 @@ impl Bus {
                 .remove(&page_key(context, virt_page + i))
                 .is_none()
             {
+                let virt_page_i = virt_page.checked_add(i).ok_or(VmError::Layout(
+                    format!("MUNMAP: virtual page overflow: base=0x{:08X}, offset=0x{:08X}", virt_page, i)
+                ))?;
+                let address = virt_page_i.checked_mul(PAGE_SIZE).ok_or(VmError::Layout(
+                    format!("MUNMAP: address overflow: page=0x{:08X}, PAGE_SIZE=0x{:X}", virt_page_i, PAGE_SIZE)
+                ))?;
                 return Err(VmError::UnmappedAddress {
                     context,
-                    address: (virt_page + i) * PAGE_SIZE,
+                    address,
                 });
             }
         }
         Ok(())
     }
 
-    pub fn mprotect(&mut self, context: u32, virt_page: u32, permissions: u8) -> VmResult<()> {
-        let key = page_key(context, virt_page);
-        let entry = self.pages.get_mut(&key).ok_or(VmError::UnmappedAddress {
-            context,
-            address: virt_page * PAGE_SIZE,
-        })?;
-        entry.permissions = permissions;
+    pub fn mprotect(&mut self, context: u32, virt_page: u32, page_count: u32, permissions: u8) -> VmResult<()> {
+        for i in 0..page_count {
+            let key = page_key(context, virt_page + i);
+            let virt_page_i = virt_page.checked_add(i).ok_or(VmError::Layout(
+                format!("MPROTECT: virtual page overflow: base=0x{:08X}, offset=0x{:08X}", virt_page, i)
+            ))?;
+            let address = virt_page_i.checked_mul(PAGE_SIZE).ok_or(VmError::Layout(
+                format!("MPROTECT: address overflow: page=0x{:08X}, PAGE_SIZE=0x{:X}", virt_page_i, PAGE_SIZE)
+            ))?;
+            let entry = self.pages.get_mut(&key).ok_or(VmError::UnmappedAddress {
+                context,
+                address,
+            })?;
+            entry.permissions = permissions;
+        }
         Ok(())
     }
 

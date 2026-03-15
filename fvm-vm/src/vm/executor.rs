@@ -82,7 +82,7 @@ pub fn execute_instruction(vm: &mut VM, instruction: Instruction) -> VmResult<()
         Op::RorReg | Op::RorImm => shift(vm, &instruction, ShiftOp::Ror),
         Op::MmapRegRegReg | Op::MmapRegRegImm => mmap_instruction(vm, &instruction),
         Op::MunmapRegReg | Op::MunmapRegImm => munmap_instruction(vm, &instruction),
-        Op::Mprotect => mprotect_instruction(vm, &instruction),
+        Op::MprotectRegRegRb | Op::MprotectRegImmRb => mprotect_instruction(vm, &instruction),
     }
 }
 
@@ -478,10 +478,14 @@ fn transfer_kernel_to_user(vm: &mut VM, dst_arg: &Argument, src_arg: &Argument) 
         vm.files[USER_CONTEXT as usize].ip = source_value;
     } else if dst.is_cr() {
         vm.files[USER_CONTEXT as usize].cr = source_value;
-    } else {
+    } 
+    else if dst.is_sp() {
+        vm.files[USER_CONTEXT as usize].sp = source_value;
+    }
+    else {
         return Err(VmError::InvalidRomImage(format!(
-            "TKR: invalid destination register 0x{:02X}",
-            dst.0
+            "TKR: invalid destination register {:?}",
+            dst
         )));
     }
     Ok(())
@@ -580,6 +584,7 @@ fn mmap_instruction(vm: &mut VM, instruction: &Instruction) -> VmResult<()> {
     let phys_page = read_register(vm, expect_register(&instruction.arguments[1])?)?;
     let page_count = read_source_value(vm, &instruction.arguments[2])?;
     let context = vm.mr;
+    
     vm.bus.mmap(
         context,
         virt_page,
@@ -604,9 +609,12 @@ fn mprotect_instruction(vm: &mut VM, instruction: &Instruction) -> VmResult<()> 
         return Err(VmError::Interrupt(Interrupt::PrivilegeViolation));
     }
     let virt_page = read_register(vm, expect_register(&instruction.arguments[0])?)?;
-    let perms = read_register(vm, expect_register(&instruction.arguments[1])?)? as u8;
+    let page_count_arg = &instruction.arguments[1];
+    let page_count = read_source_value(vm, page_count_arg)?;
+    let perms = read_register(vm, expect_register(&instruction.arguments[2])?)? as u8;
     let context = vm.mr;
-    vm.bus.mprotect(context, virt_page, perms)
+    
+    vm.bus.mprotect(context, virt_page, page_count, perms)
 }
 
 fn port_device(vm: &VM, port: u32) -> VmResult<Rc<dyn PortMappedDevice>> {

@@ -1,0 +1,127 @@
+# dpl_test.fa
+# Maps the kernel's own pages into context 1, drops to user mode,
+# runs a few instructions, then returns to kernel via INT 15.
+#
+# Run with:
+#   just asm-exec ''(mem_size: "16mb", rom: "target/examples/dpl_test.fo", devices: [raw_io(port: 0), hex_io(port: 1)])''
+
+.rodata
+  msg_kernel_start: db "kernel: setting up user context\n", 0
+  msg_user:         db "user:   hello from user mode\n", 0
+  msg_syscall:      db "kernel: got syscall from user, rw0=", 0
+  msg_done:         db "kernel: returned from user\n", 0
+  newline:          db "\n", 0
+  msg_mmap_loader:  db "  mmap loader info: OK\n", 0
+  msg_mprot_loader: db "  mprotect loader info: OK\n", 0
+  msg_mmap_rodata:  db "  mmap rodata: OK\n", 0
+  msg_mprot_rodata: db "  mprotect rodata: OK\n", 0
+  msg_mmap_code:    db "  mmap code: OK\n", 0
+  msg_mprot_code:   db "  mprotect code: OK\n", 0
+  msg_mmap_stack:   db "  mmap stack: OK\n", 0
+  msg_mprot_stack:  db "  mprotect stack: OK\n", 0
+
+.code
+
+print_str:
+  .loop:
+    LOAD rb0, rw1
+    CMP rb0, 0
+    JZ .done
+    OUT 0, rb0
+    ADD rw1, 1
+    JMP .loop
+  .done:
+    RET
+
+main:
+  MOV rw1, msg_kernel_start
+  CALL print_str
+
+  # Install syscall handler at interrupt 15
+  MOV rb0, 15
+  SIE rb0, syscall_handler
+
+  # Page numbers are hardcoded from the loader info output:
+  #   loader info: phys=0 virt=0     pages=1
+  #   rodata:      phys=1 virt=1     pages=1
+  #   code:        phys=2 virt=2     pages=1
+  #   stack:       phys=0xC00        virt=0xFFC00  pages=0x400
+
+  MOV rw0, 1             # target context 1
+  MOV mr, rw0
+
+  # loader info: read-only
+  MOV rw0, 0
+  MOV rw1, 0
+  MMAP rw0, rw1, 1
+  MOV rb2, 0b001         # READ
+  MPROTECT rw0, 1, rb2
+  MOV rw1, msg_mmap_loader
+  CALL print_str
+
+  # rodata: read-only
+  MOV rw0, 1
+  MOV rw1, 1
+  MMAP rw0, rw1, 1
+  MOV rb2, 0b001         # READ
+  MPROTECT rw0, 1, rb2
+  MOV rw1, msg_mmap_rodata
+  CALL print_str
+
+  # code: read + execute
+  MOV rw0, 2
+  MOV rw1, 2
+  MMAP rw0, rw1, 1
+  MOV rb2, 0b101         # READ | EXECUTE
+  MPROTECT rw0, 1, rb2
+  MOV rw1, msg_mmap_code
+  CALL print_str
+
+  # stack: read + write
+  MOV rw0, 0xFFC00
+  MOV rw1, 0xC00
+  MOV rw3, 0x400        # Use rw3 for page_count instead of rw2
+  MMAP rw0, rw1, rw3
+  MOV rb2, 0b011         # READ | WRITE
+  MPROTECT rw0, rw3, rb2  # Use rw3 here too
+  MOV rw1, msg_mmap_stack
+  CALL print_str
+
+  MOV mr, 0              # restore mapping target
+
+  # Set up user register file
+  MOV rw0, user_entry
+  TKR ip, rw0            # user ip = user_entry
+  MOV rw0, 0xFFFFFFFF
+  TKR sp, rw0            # user sp = top of stack
+  MOV rw0, 1
+  TKR cr, rw0            # user cr = context 1
+
+  DPL                    # --- drops to user mode here ---
+  # syscall_handler halts rather than IRET, so this is unreachable in this test
+
+  MOV rw1, msg_done
+  CALL print_str
+  HALT
+
+user_entry:
+  MOV rw1, msg_user
+  CALL print_str
+  MOV rw0, 0xABCD        # put a value in rw0 so kernel can see it came through
+  INT 15                 # syscall: return to kernel
+
+  # If the kernel returns via IRET the user lands here.
+  # For this test the kernel halts instead, so this is unreachable.
+  HALT
+
+syscall_handler:
+  # Interrupted file was user. rw0 from user is not visible here directly;
+  # use TUR to read it.
+  MOV rw1, msg_syscall
+  CALL print_str
+  TUR rw0, rw0           # read user rw0 into kernel rw0
+  OUT 1, rw0
+  MOV rw1, newline
+  CALL print_str
+  # Do not IRET; halt so the test has a clean exit.
+  HALT

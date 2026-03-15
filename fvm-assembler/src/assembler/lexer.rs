@@ -99,6 +99,15 @@ impl Lexer {
             .map_err(|_| AssemblerError::lex(self.line, self.col, "Invalid octal number"))
     }
 
+    fn lex_bin_number(&mut self) -> Result<u32> {
+        let mut num_str = String::new();
+        while matches!(self.peek(0), '0' | '1') {
+            num_str.push(self.advance());
+        }
+        u32::from_str_radix(&num_str, 2)
+            .map_err(|_| AssemblerError::lex(self.line, self.col, "Invalid binary number"))
+    }
+
     fn lex_dec_number(&mut self) -> Result<u32> {
         let mut num_str = String::new();
         while matches!(self.peek(0), '0'..='9') {
@@ -118,6 +127,10 @@ impl Lexer {
             self.advance(); // '0'
             self.advance(); // 'o'
             self.lex_oct_number()
+        } else if self.peek(0) == '0' && matches!(self.peek(1), 'b' | 'B') {
+            self.advance(); // '0'
+            self.advance(); // 'b'
+            self.lex_bin_number()
         } else {
             self.lex_dec_number()
         }

@@ -1,5 +1,20 @@
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RegisterEncoding(pub u8);
+
+impl std::fmt::Debug for RegisterEncoding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.view() {
+            view if view == Self::VIEW_RW => write!(f, "rw{}", self.index()),
+            view if view == Self::VIEW_RH => write!(f, "rh{}", self.index()),
+            view if view == Self::VIEW_RB => write!(f, "rb{}", self.index()),
+            view if view == Self::VIEW_SP => write!(f, "sp"),
+            view if view == Self::VIEW_CR => write!(f, "cr"),
+            view if view == Self::VIEW_IP => write!(f, "ip"),
+            view if view == Self::VIEW_MR => write!(f, "mr"),
+            _ => write!(f, "Register(0x{:02X})", self.0),
+        }
+    }
+}
 
 impl RegisterEncoding {
     const VIEW_MASK: u8 = 0b1110_0000;

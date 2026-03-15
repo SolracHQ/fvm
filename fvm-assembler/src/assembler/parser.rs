@@ -906,11 +906,11 @@ fn parse_instruction(
             })?;
             match op {
                 "TKR" => {
-                    if !dst.is_rw() && !dst.is_ip() && !dst.is_cr() {
+                    if !dst.is_rw() && !dst.is_ip() && !dst.is_cr() && !dst.is_sp(){
                         return Err(AssemblerError::parse(
                             dst_tok.line,
                             dst_tok.col,
-                            "TKR: destination must be rw, ip, or cr",
+                            "TKR: destination must be rw, ip, cr, or sp",
                         ));
                     }
                 }
@@ -1046,17 +1046,21 @@ fn parse_instruction(
                 AssemblerError::parse(
                     virt_tok.line,
                     virt_tok.col,
-                    "MPROTECT: expected virtual address register",
+                    "MPROTECT: expected virtual page register",
                 )
             })?;
             if !virt.is_rw() {
                 return Err(AssemblerError::parse(
                     virt_tok.line,
                     virt_tok.col,
-                    "MPROTECT: virtual address register must be rw",
+                    "MPROTECT: virtual page register must be rw",
                 ));
             }
             parser.advance();
+            parser.expect_comma()?;
+
+            // Parse page_count (rw register or imm32)
+            let page_count = parse_u32_or_rw(parser, "MPROTECT", "page_count")?;
             parser.expect_comma()?;
 
             let perms_tok = parser.peek(0).clone();
@@ -1075,9 +1079,16 @@ fn parse_instruction(
                 ));
             }
             parser.advance();
+
+            let opcode = match &page_count {
+                Argument::Register(_) => Op::MprotectRegRegRb,
+                _ => Op::MprotectRegImmRb,
+            };
+
             Ok(inst!(
-                Op::Mprotect,
+                opcode,
                 Argument::Register(virt),
+                page_count,
                 Argument::Register(perms)
             ))
         }

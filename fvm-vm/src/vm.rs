@@ -7,6 +7,8 @@ pub mod flags;
 pub mod interrupts;
 pub mod program_patcher;
 pub mod registers;
+pub mod initializer;
+pub mod constants;
 
 use std::{collections::HashMap, rc::Rc};
 
@@ -16,21 +18,14 @@ use fvm_core::{
     types::{Address, Word},
 };
 
-use self::program_patcher::{SectionPlacement, load_and_patch_program};
 use crate::{
     error::{VmError, VmResult},
     vm::{
-        bus::PAGE_SIZE, config::VmConfig, device::Device, interrupts::Interrupt,
+        config::VmConfig, device::Device, interrupts::Interrupt,
         registers::RegisterFile,
     },
 };
-
-const FAULT_INFO_SIZE: u32 = PAGE_SIZE;
-const STACK_SIZE: u32 = 4 * 1024 * 1024;
-const STACK_BASE: u32 = 0xFFC0_0000;
-const STACK_TOP: u32 = 0xFFFF_FFFF;
-const KERNEL_CONTEXT: u32 = 0;
-const USER_CONTEXT: u32 = 1;
+use self::constants::{STACK_TOP, KERNEL_CONTEXT, USER_CONTEXT};
 
 pub struct VM {
     pub files: [RegisterFile; 2], // 0 = kernel, 1 = user
@@ -81,14 +76,25 @@ impl VM {
     fn fetch(&mut self) -> VmResult<Op> {
         let address = self.files[self.active].ip;
         let byte = self.bus.fetch_byte(address)?;
-        Op::try_from(byte).map_err(|_| VmError::InvalidOpcode {
-            opcode: byte,
-            address,
+        Op::try_from(byte).map_err(|_| {
+            VmError::FetchError {
+                address,
+                reason: format!("0x{:02X} is not a valid opcode byte", byte),
+            }
         })
     }
 
     fn decode(&mut self, opcode: Op) -> VmResult<Instruction> {
-        decoder::decode_instruction(self, opcode)
+        let ip = self.files[self.active].ip;
+        decoder::decode_instruction(self, opcode).map_err(|e| match e {
+            VmError::DecodeError { .. } | VmError::FetchError { .. } => e,
+            other => VmError::DecodeError {
+                address: ip,
+                opcode: opcode as u8,
+                arg_index: 0,
+                reason: other.to_string(),
+            },
+        })
     }
 
     fn execute(&mut self, instruction: Instruction) -> VmResult<()> {
@@ -137,123 +143,10 @@ impl VM {
         Ok(())
     }
 
-    /// This function executes the initialization steps for the VM, kinda the bios work, is a vm so is magic
-    /// Steps:
-    /// 1. Write the discovery table to ram start address and map it to the first few pages of the kernel context.
-    ///    The discovery table contains an entry for each physical memory region, including its base address, size, and device ID.
-    /// 2. Load the program sections into memory and map them to the appropriate virtual addresses.
-    /// 3. Map the fixed stack region to the end of main RAM.
+    /// Initialize the VM by setting up loader info, loading the program, and preparing execution.
+    /// All initialization logic is delegated to the initializer module.
     fn initialize(&mut self, rom_path: String) -> VmResult<()> {
-        let physical_regions = self.bus.physical_regions();
-        let main_ram = physical_regions
-            .first()
-            .ok_or_else(|| VmError::Layout("VM requires a main RAM device".to_string()))?;
-
-        if main_ram.size < STACK_SIZE {
-            return Err(VmError::Layout(format!(
-                "main RAM must be at least {} bytes to back the fixed 4 MiB stack",
-                STACK_SIZE
-            )));
-        }
-
-        self.bus.set_context(KERNEL_CONTEXT);
-        self.files[0].cr = KERNEL_CONTEXT;
-
-        self.write_discovery_table(&physical_regions)?;
-
-        let discovery_pages = discovery_table_pages(physical_regions.len() as u32);
-        let fault_info_base = discovery_pages
-            .checked_mul(PAGE_SIZE)
-            .ok_or(VmError::AddressOverflow)?;
-        let reserved_bytes = fault_info_base
-            .checked_add(FAULT_INFO_SIZE)
-            .ok_or(VmError::AddressOverflow)?;
-        let patched_program = load_and_patch_program(
-            &rom_path,
-            reserved_bytes,
-            main_ram
-                .size
-                .checked_sub(STACK_SIZE)
-                .ok_or(VmError::AddressOverflow)?,
-        )?;
-
-        self.bus
-            .mmap(KERNEL_CONTEXT, 0, 0, discovery_pages, bus::perm::READ)?;
-        self.bus.mmap(
-            KERNEL_CONTEXT,
-            fault_info_base / PAGE_SIZE,
-            fault_info_base / PAGE_SIZE,
-            FAULT_INFO_SIZE / PAGE_SIZE,
-            bus::perm::READ,
-        )?;
-
-        self.load_section(
-            &patched_program.ro_data,
-            patched_program.sections[0],
-            bus::perm::READ,
-        )?;
-        self.load_section(
-            &patched_program.code,
-            patched_program.sections[1],
-            bus::perm::READ | bus::perm::EXECUTE,
-        )?;
-        self.load_section(
-            &patched_program.rw_data,
-            patched_program.sections[2],
-            bus::perm::READ | bus::perm::WRITE,
-        )?;
-
-        let stack_phys_base = main_ram.size - STACK_SIZE;
-        self.bus.mmap(
-            KERNEL_CONTEXT,
-            STACK_BASE / PAGE_SIZE,
-            stack_phys_base / PAGE_SIZE,
-            STACK_SIZE / PAGE_SIZE,
-            bus::perm::READ | bus::perm::WRITE,
-        )?;
-
-        self.files[0].ip = patched_program.entry_point;
-        self.files[0].sp = STACK_TOP;
-        self.files[1] = RegisterFile::new();
-        self.active = KERNEL_CONTEXT as usize;
-
-        Ok(())
-    }
-
-    fn write_discovery_table(&self, regions: &[bus::PhysicalRegionInfo]) -> VmResult<()> {
-        self.bus.write_physical_u32(0, regions.len() as u32)?;
-        let mut cursor = 4u32;
-
-        for region in regions {
-            self.bus.write_physical_u32(cursor, region.phys_base)?;
-            self.bus.write_physical_u32(cursor + 4, region.size)?;
-            self.bus.write_physical_bytes(cursor + 8, &region.id)?;
-            self.bus
-                .write_physical_byte(cursor + 16, default_permissions_for_device(region.id))?;
-            self.bus.write_physical_bytes(cursor + 17, &[0; 7])?;
-            cursor = cursor.checked_add(24).ok_or(VmError::AddressOverflow)?;
-        }
-
-        Ok(())
-    }
-
-    fn load_section(
-        &mut self,
-        bytes: &[u8],
-        placement: Option<SectionPlacement>,
-        permissions: u8,
-    ) -> VmResult<()> {
-        if let Some(placement) = placement {
-            self.bus.write_physical_bytes(placement.phys_base, bytes)?;
-            self.bus.mmap(
-                KERNEL_CONTEXT,
-                placement.actual_base / PAGE_SIZE,
-                placement.phys_base / PAGE_SIZE,
-                placement.aligned_len / PAGE_SIZE,
-                permissions,
-            )?;
-        }
-        Ok(())
+        initializer::initialize(self, rom_path)
     }
 
     fn poll_devices(&self) -> VmResult<Option<Interrupt>> {
@@ -279,9 +172,10 @@ impl VM {
         self.bus.set_context(self.files[0].cr);
 
         if self.pending_interrupt == Some(1) && interrupt_index == 1 {
-            self.halted = true;
-            println!("Double bus fault detected, halting VM");
-            return Ok(());
+            return Err(VmError::DoubleFault {
+                first_interrupt: 1,
+                second_interrupt: interrupt_index,
+            });
         }
 
         self.pending_interrupt = Some(interrupt_index);
@@ -294,13 +188,15 @@ impl VM {
         }
         self.push_kernel_u32(resume_ip)?;
         self.push_kernel_u32(interrupted.cr)?;
-        self.push_kernel_u32(interrupted.flags.bits() as u32)?;
+        self.push_kernel_byte(interrupted.flags.bits())?;
         self.push_kernel_byte(u8::from(came_from_user))?;
 
         let handler = self.ivt[interrupt_index as usize];
         if handler == 0 {
-            self.halted = true;
-            return Ok(());
+            return Err(VmError::NoInterruptHandler {
+                interrupt: interrupt_index,
+                address: resume_ip,
+            });
         }
 
         self.files[0].ip = handler;
@@ -314,7 +210,7 @@ impl VM {
         }
 
         let came_from_user = self.pop_kernel_byte()? != 0;
-        let flags = self.pop_kernel_u32()? as u8;
+        let flags = self.pop_kernel_byte()?;
         let cr = self.pop_kernel_u32()?;
         let ip = self.pop_kernel_u32()?;
         let mut regs = [0u32; 16];
@@ -390,6 +286,7 @@ fn opcode_controls_ip(opcode: Op) -> bool {
             | Op::Iret
             | Op::IntImm
             | Op::IntReg
+            | Op::Dpl
     )
 }
 
@@ -403,12 +300,4 @@ fn interrupt_for_error(error: &VmError) -> Option<Interrupt> {
         VmError::InvalidOpcode { .. } => Some(Interrupt::InvalidOpcode),
         _ => None,
     }
-}
-
-fn default_permissions_for_device(_id: [u8; 8]) -> u8 {
-    bus::perm::READ | bus::perm::WRITE
-}
-
-fn discovery_table_pages(entry_count: u32) -> u32 {
-    (4 + entry_count * 24).div_ceil(PAGE_SIZE)
 }

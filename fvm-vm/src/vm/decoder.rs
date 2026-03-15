@@ -130,7 +130,7 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
                 read_reg(vm, ip, 2)?,
                 read_reg(vm, ip, 3)?,
             ],
-            3,
+            4,
         ),
 
         Op::MmapRegRegImm => Instruction::new(
@@ -140,13 +140,13 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
                 read_reg(vm, ip, 2)?,
                 read_u32_arg(vm, ip, 3)?,
             ],
-            3,
+            7,
         ),
 
         Op::MunmapRegReg => Instruction::new(
             opcode,
             [read_reg(vm, ip, 1)?, read_reg(vm, ip, 2)?, Argument::None],
-            2,
+            3,
         ),
 
         Op::MunmapRegImm => Instruction::new(
@@ -156,13 +156,23 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
                 read_u32_arg(vm, ip, 2)?,
                 Argument::None,
             ],
-            2,
+            6,
         ),
 
-        Op::Mprotect => Instruction::new(
+        Op::MprotectRegRegRb => Instruction::new(
             opcode,
-            [read_reg(vm, ip, 1)?, read_reg(vm, ip, 2)?, Argument::None],
-            2,
+            [read_reg(vm, ip, 1)?, read_reg(vm, ip, 2)?, read_reg(vm, ip, 3)?],
+            4,
+        ),
+
+        Op::MprotectRegImmRb => Instruction::new(
+            opcode,
+            [
+                read_reg(vm, ip, 1)?,
+                read_u32_arg(vm, ip, 2)?,
+                read_reg(vm, ip, 6)?,
+            ],
+            7,
         ),
     };
 
@@ -179,9 +189,11 @@ fn read_reg(vm: &VM, ip: u32, offset: u32) -> VmResult<Argument> {
 
 fn read_reg_encoding(vm: &VM, ip: u32, offset: u32) -> VmResult<RegisterEncoding> {
     let byte = read_exec_byte(vm, ip, offset)?;
-    RegisterEncoding::from_byte(byte).ok_or(VmError::InvalidOpcode {
-        opcode: byte,
+    RegisterEncoding::from_byte(byte).ok_or(VmError::DecodeError {
         address: ip.wrapping_add(offset),
+        opcode: byte,
+        arg_index: offset as u8,
+        reason: format!("0x{:02X} is not a valid register encoding", byte),
     })
 }
 
@@ -201,7 +213,14 @@ fn read_width_immediate(vm: &VM, ip: u32, offset: u32, width: u8) -> VmResult<Ar
 }
 
 fn read_exec_byte(vm: &VM, ip: u32, offset: u32) -> VmResult<u8> {
-    vm.bus.fetch_byte(add_offset(ip, offset)?)
+    let addr = add_offset(ip, offset)?;
+    vm.bus.fetch_byte(addr).map_err(|e| match e {
+        VmError::UnmappedAddress { .. } | VmError::PermissionDenied { .. } => e,
+        other => VmError::FetchError {
+            address: addr,
+            reason: other.to_string(),
+        },
+    })
 }
 
 fn read_exec_u16(vm: &VM, ip: u32, offset: u32) -> VmResult<u16> {

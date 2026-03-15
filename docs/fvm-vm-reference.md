@@ -59,11 +59,11 @@ Examples: `rw5 = 0x25`, `rh5 = 0x45`, `rb5 = 0x65`, `sp = 0x80`, `cr = 0xA0`,
 
 Three flag bits updated by arithmetic and comparison instructions:
 
-| Flag | Name | Set when |
-|------|------|----------|
-| Z | zero | result == 0 |
-| C | carry | unsigned overflow (ADD) or borrow (SUB/CMP) |
-| N | negative | high bit of result is set |
+| Flag | Name     | Set when                                    |
+| ---- | -------- | ------------------------------------------- |
+| Z    | zero     | result == 0                                 |
+| C    | carry    | unsigned overflow (ADD) or borrow (SUB/CMP) |
+| N    | negative | high bit of result is set                   |
 
 ---
 
@@ -82,21 +82,10 @@ never modified at runtime.
 
 RAM size is configured by the user at startup. It is not required to be 4 GB or any fixed size.
 
-The first bytes of RAM hold a discovery table so the kernel can learn what devices are present
-and where. The table is written by the VM at startup before the kernel runs.
-
-Discovery table layout (big-endian):
-
-```
-offset  size  field
-0       4     number of entries
-per entry (24 bytes each):
-  0     4     physical base address
-  4     4     size in bytes
-  8     8     device id (8-byte ASCII, unused bytes zero-padded)
-  16    1     default permissions (RWX bits, see permissions table)
-  17    7     reserved
-```
+The first pages of RAM hold the loader info region, written once by the VM before the kernel
+runs and mapped read-only in context 0. It is the single source of truth for boot-time
+topology: what physical memory and port devices exist, and which pages the loader already
+consumed.
 
 ### Virtual address translation
 
@@ -117,29 +106,30 @@ refers to the page starting at byte address 0x1000.
 
 ### Permissions
 
-| Bit | Name | Effect |
-|-----|------|--------|
-| 0 | Read | allows data reads |
-| 1 | Write | allows data writes |
-| 2 | Execute | allows instruction fetch |
+| Bit | Name    | Effect                   |
+| --- | ------- | ------------------------ |
+| 0   | Read    | allows data reads        |
+| 1   | Write   | allows data writes       |
+| 2   | Execute | allows instruction fetch |
 
 Common combinations:
 
-| Name | Bits | Used for |
-|------|------|----------|
-| ROM | `001` | `.rodata`, device table |
-| Code | `101` | `.code` |
-| RAM | `011` | `.data`, stack |
+| Name | Bits  | Used for               |
+| ---- | ----- | ---------------------- |
+| ROM  | `001` | `.rodata`, loader info |
+| Code | `101` | `.code`                |
+| RAM  | `011` | `.data`, stack         |
 
 Violating any permission raises interrupt 1.
 
 ### Default virtual layout in context 0
 
-The loader builds this layout at startup. All addresses are determined at load time; nothing is hardcoded. Each region starts at the next 4 kb boundary after the previous region. Sections with size 0 are skipped entirely.
+The loader builds this layout at startup. All addresses are determined at load time; nothing is
+hardcoded. Each region starts at the next 4 kb boundary after the previous region. Sections
+with size 0 are skipped entirely.
 
 ```
-page 0        device table         ROM   ceil((4 + entries*24) / 4096) pages
-next page     fault info region    ROM   reserved, layout pending (see below)
+page 0        loader info region   ROM   ceil(loader_info_size / 4096) pages
 next page     .rodata              ROM   ceil(rodata_size / 4096) pages
 next page     .code                Code  ceil(code_size / 4096) pages
 next page     .data                RAM   ceil(data_size / 4096) pages
@@ -148,26 +138,63 @@ next page     .data                RAM   ceil(data_size / 4096) pages
 ```
 
 The stack region is always mapped regardless of RAM size. It maps the last 4 MB of physical RAM
-to the fixed virtual range `0xFFC00000..0xFFFFFFFF`. `sp` in the kernel file is initialised to
+to the fixed virtual range `0xFFC00000..0xFFFFFFFF`. `sp` in the kernel file is initialized to
 `0xFFFFFFFF` on VM creation.
 
 If the end of `.data` would overlap `0xFFC00000` the loader returns an error.
 
-### Fault info region
+### Loader info region
 
-A reserved page in context 0 following the device table, accessible only from kernel mode. The VM writes fault information here on every interrupt entry before jumping to the handler.
+Starts at physical page 0 and is mapped read-only at virtual page 0 in context 0. The loader
+writes it once before the kernel runs. Size is rounded up to the nearest page boundary after
+all fields are serialized; the kernel region entry for `LoaderInfo` records the exact page
+count.
 
-The exact byte layout is not yet finalised. Fields planned:
+All multi-byte fields are big-endian. A `Vec` in the layout below means a 4-byte count
+followed by that many entries.
 
-- fault kind discriminant
-- which register file was active at the time of the fault
-- CR value from the interrupted file
-- faulting virtual address if applicable
-- resolved physical address if applicable
-- device id if the fault originated in a device
-- instruction pointer at the time of the fault
+```
+enum KernelMappingKind : u8 {
+    LoaderInfo = 0,
+    Rodata     = 1,
+    Code       = 2,
+    Data       = 3,
+    Stack      = 4,
+}
 
-Finalising this layout will increment the binary format version.
+struct MemoryRegion {
+    id:         [u8; 8],   // 8-byte ASCII device id, unused bytes zero-padded
+    base_page:  u32,
+    page_count: u32,
+}
+
+struct PortDevice {
+    id:   [u8; 8],         // 8-byte ASCII device id, unused bytes zero-padded
+    port: u32,
+}
+
+struct KernelMapping {
+    kind:       KernelMappingKind,  // 1 byte
+    base_page:  u32,
+    page_count: u32,               // 0 if the section was empty and not mapped
+}
+
+struct LoaderInfo {
+    memory_regions:  Vec<MemoryRegion>,
+    port_devices:    Vec<PortDevice>,
+    kernel_mappings: Vec<KernelMapping>,
+}
+```
+
+`memory_regions` lists every physical RAM and memory-mapped device region in physical address
+order. The kernel uses this to enumerate what backing memory exists.
+
+`port_devices` lists every port-mapped device with its port number. There is no separate
+discovery mechanism for port devices; this is the only place the kernel learns about them.
+
+`kernel_mappings` lists every page range the loader reserved, in layout order. The kernel reads
+this at startup and marks all listed pages as occupied before doing any allocation. Entries with
+`page_count = 0` were not loaded and hold no physical pages.
 
 ### Bus device trait
 
@@ -247,16 +274,16 @@ After `DPL` the kernel is no longer running. The next path back is through an in
 
 The IVT has 256 entries indexed by a `u8`.
 
-| Index | Name | Raised by |
-|-------|------|-----------|
-| 0 | reserved | reserved for future reset or shutdown flow |
-| 1 | bus fault | unmapped address, permission violation, or device fault |
-| 2 | invalid opcode | opcode byte outside the defined set |
-| 3..5 | reserved | - |
-| 6 | privilege fault | privileged operation attempted in user mode |
-| 7..14 | reserved | - |
-| 15 | software interrupt | conventional syscall slot |
-| 16..255 | unreserved | available for hardware device interrupts |
+| Index   | Name               | Raised by                                               |
+| ------- | ------------------ | ------------------------------------------------------- |
+| 0       | reserved           | reserved for future reset or shutdown flow              |
+| 1       | bus fault          | unmapped address, permission violation, or device fault |
+| 2       | invalid opcode     | opcode byte outside the defined set                     |
+| 3..5    | reserved           | -                                                       |
+| 6       | privilege fault    | privileged operation attempted in user mode             |
+| 7..14   | reserved           | -                                                       |
+| 15      | software interrupt | conventional syscall slot                               |
+| 16..255 | unreserved         | available for hardware device interrupts                |
 
 Reservation ranges within `16..255` for specific hardware device classes will be defined when
 device support is implemented.
@@ -268,34 +295,33 @@ kernel file.
 
 Dispatch sequence:
 
-1. Write fault information to the fault info region.
-2. If `pending_interrupt` is `Some(1)` and the incoming index is also `1`, this is a double
+1. If `pending_interrupt` is `Some(1)` and the incoming index is also `1`, this is a double
    fault: halt the VM immediately.
-3. Set `pending_interrupt = Some(index)`.
-4. Record whether the interrupted file was user (`came_from_user = active == 1`).
-5. Switch to the kernel file (`active = 0`).
-6. Push onto the kernel stack in this order (all values big-endian):
-   - the 16 general-purpose registers from the interrupted file (64 bytes)
-   - the interrupted `ip` (4 bytes)
-   - the interrupted `cr` (4 bytes)
-   - the interrupted `flags` (4 bytes)
-   - `came_from_user` as a single byte (1 byte)
-7. Look up `ivt[index]`. If the address is `0`, halt the VM.
-8. Set kernel `ip` to the handler address and clear `pending_interrupt`.
+2. Set `pending_interrupt = Some(index)`.
+3. Record whether the interrupted file was user (`came_from_user = active == 1`).
+4. Switch to the kernel file (`active = 0`).
+5. Push onto the kernel stack in this order:
+   - the 16 general-purpose registers from the interrupted file, each as u32 (64 bytes)
+   - the interrupted `ip` as u32 (4 bytes)
+   - the interrupted `cr` as u32 (4 bytes)
+   - the interrupted `flags` as u8 (1 byte)
+   - `came_from_user` as u8 (1 byte)
+6. Look up `ivt[index]`. If the address is `0`, halt the VM.
+7. Set kernel `ip` to the handler address and clear `pending_interrupt`.
 
-The interrupted `ip` pushed in step 6 is chosen by the caller before `raise_interrupt` runs:
+The interrupted `ip` pushed in step 5 is chosen by the caller before `raise_interrupt` runs:
 
 - fetch-time faults push `ip + 1`
 - execute-time faults push `ip + instruction.size`
 - `INT` pushes the address of the instruction following `INT`
 
-Total frame size pushed onto the kernel stack: 77 bytes.
+Total frame size pushed onto the kernel stack: 74 bytes.
 
 ### IRET
 
 `IRET` unwinds exactly one interrupt frame from the kernel stack:
 
-1. Pop `came_from_user` (1 byte), `flags` (4 bytes), `cr` (4 bytes), `ip` (4 bytes), and the
+1. Pop `came_from_user` (1 byte), `flags` (1 byte), `cr` (4 bytes), `ip` (4 bytes), and the
    16 general-purpose registers (64 bytes) from kernel `sp` in reverse push order.
 2. If `came_from_user == 1`, restore the popped state into the user file and set `active = 1`.
    Otherwise restore into the kernel file and stay in kernel mode.
@@ -314,10 +340,10 @@ has overflowed or the interrupt handler itself is faulting.
 
 The loader performs the following steps at startup:
 
-1. Build the physical layout: write the device discovery table into the first bytes of RAM.
-2. Compute the virtual base address for each non-empty section by starting after the fixed
-   regions (device table, fault info) and advancing by `ceil(section_size / 4096) * 4096` for
-   each section in order.
+1. Serialise the loader info region into the first pages of RAM and map them read-only in
+   context 0.
+2. Compute the virtual base address for each non-empty section by starting after the loader
+   info region and advancing by `ceil(section_size / 4096) * 4096` for each section in order.
 3. Walk the relocation table. Each entry `(section: u8, offset: u32)` identifies a 4-byte slot
    within that section. Patch the slot by replacing the assembler-assumed address with the
    actual loaded address:
@@ -328,11 +354,11 @@ The loader performs the following steps at startup:
 
 Section indices used in relocation entries:
 
-| Value | Section |
-|-------|---------|
-| 0 | `.rodata` |
-| 1 | `.code` |
-| 2 | `.data` |
+| Value | Section   |
+| ----- | --------- |
+| 0     | `.rodata` |
+| 1     | `.code`   |
+| 2     | `.data`   |
 
 ---
 
@@ -373,11 +399,11 @@ IP advancement: control-flow instructions update `ip` themselves. All other inst
 
 Faults raised during `step`:
 
-| Cause | Interrupt |
-|-------|-----------|
-| bus fault on fetch, read, or write | 1 |
-| unrecognised opcode byte | 2 |
-| privileged instruction in user mode | 6 |
+| Cause                               | Interrupt |
+| ----------------------------------- | --------- |
+| bus fault on fetch, read, or write  | 1         |
+| unrecognised opcode byte            | 2         |
+| privileged instruction in user mode | 6         |
 
 If the IVT entry for the raised interrupt is `0` the VM halts immediately. Otherwise the
 handler runs in the kernel file and returns via `IRET`.
@@ -386,19 +412,19 @@ handler runs in the kernel file and returns via `IRET`.
 
 ## Privileged and interrupt opcodes
 
-| Mnemonic | Encoding | Effect |
-|----------|----------|--------|
-| `SIE rb, label` | `op rb_enc imm32[4]` | `ivt[rb] = imm32` |
-| `SIE rb, rw` | `op rb_enc rw_enc` | `ivt[rb] = rw` |
-| `INT imm8` | `op imm8` | raise interrupt `imm8` |
-| `INT rb` | `op rb_enc` | raise interrupt `rb` |
-| `IRET` | `op` | unwind one interrupt frame from the kernel stack |
-| `DPL` | `op` | activate user file, one-way until next interrupt |
-| `TUR rw, rw\|ip\|cr` | `op rw_enc rw_enc` | copy user register into kernel register; `ip` and `cr` valid as source |
-| `TKR rw\|ip\|cr, rw` | `op rw_enc rw_enc` | copy kernel register into user register; `ip` and `cr` valid as destination |
-| `MMAP rw, rw, rw\|imm32` | `op rw_enc rw_enc rw_enc\|imm32` | map physical pages into context `mr`; operands are page numbers and page count |
-| `MUNMAP rw, rw\|imm32` | `op rw_enc rw_enc\|imm32` | unmap pages from context `mr`; operands are page number and page count |
-| `MPROTECT rw, rw\|imm32, rb` | `op rw_enc rw_enc\|imm32 rb_enc` | set permission bits in context `mr`; operands are page number and page count |
+| Mnemonic                     | Encoding                         | Effect                                                                         |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| `SIE rb, label`              | `op rb_enc imm32[4]`             | `ivt[rb] = imm32`                                                              |
+| `SIE rb, rw`                 | `op rb_enc rw_enc`               | `ivt[rb] = rw`                                                                 |
+| `INT imm8`                   | `op imm8`                        | raise interrupt `imm8`                                                         |
+| `INT rb`                     | `op rb_enc`                      | raise interrupt `rb`                                                           |
+| `IRET`                       | `op`                             | unwind one interrupt frame from the kernel stack                               |
+| `DPL`                        | `op`                             | activate user file, one-way until next interrupt                               |
+| `TUR rw, rw\|ip\|cr`         | `op rw_enc rw_enc`               | copy user register into kernel register; `ip` and `cr` valid as source         |
+| `TKR rw\|ip\|cr, rw`         | `op rw_enc rw_enc`               | copy kernel register into user register; `ip` and `cr` valid as destination    |
+| `MMAP rw, rw, rw\|imm32`     | `op rw_enc rw_enc rw_enc\|imm32` | map physical pages into context `mr`; operands are page numbers and page count |
+| `MUNMAP rw, rw\|imm32`       | `op rw_enc rw_enc\|imm32`        | unmap pages from context `mr`; operands are page number and page count         |
+| `MPROTECT rw, rw\|imm32, rb` | `op rw_enc rw_enc\|imm32 rb_enc` | set permission bits in context `mr`; operands are page number and page count   |
 
 Rules:
 

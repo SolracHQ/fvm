@@ -63,5 +63,6 @@ pub enum Op {
     MmapRegRegImm,
     MunmapRegReg,
     MunmapRegImm,
-    Mprotect,
+    MprotectRegRegRb,
+    MprotectRegImmRb,
 }

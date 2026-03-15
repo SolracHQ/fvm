@@ -81,6 +81,34 @@ impl PortMappedDevice for HexIo {
             message: format!("flush error: {e}"),
         })
     }
+
+    fn write_half(&self, port: Word, value: u16) -> VmResult<()> {
+        let mut output = self.output.borrow_mut();
+        writeln!(output, "0x{value:04X}").map_err(|e| VmError::DeviceError {
+            device: self.id(),
+            offset: 0,
+            message: format!("write error: {e}"),
+        })?;
+        output.flush().map_err(|e| VmError::DeviceError {
+            device: self.id(),
+            offset: 0,
+            message: format!("flush error: {e}"),
+        })
+    }
+
+    fn write_word(&self, port: Word, value: Word) -> VmResult<()> {
+        let mut output = self.output.borrow_mut();
+        writeln!(output, "0x{value:08X}").map_err(|e| VmError::DeviceError {
+            device: self.id(),
+            offset: 0,
+            message: format!("write error: {e}"),
+        })?;
+        output.flush().map_err(|e| VmError::DeviceError {
+            device: self.id(),
+            offset: 0,
+            message: format!("flush error: {e}"),
+        })
+    }
 }
 
 #[cfg(test)]
