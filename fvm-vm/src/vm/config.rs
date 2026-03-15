@@ -144,7 +144,7 @@ pub struct GeneralDeviceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum DeviceConfig {
     /// For cases where a second RAM device is needed
     Ram {

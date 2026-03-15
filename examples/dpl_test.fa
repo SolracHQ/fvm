@@ -3,7 +3,7 @@
 # runs a few instructions, then returns to kernel via INT 15.
 #
 # Run with:
-#   just asm-exec '(mem_size: "16mb", rom: "target/examples/dpl_test.fo", devices: [(type: "raw_io", port: 0), (type: "hex_io", port: 1)])'
+#   just asm-exec ''(mem_size: "16mb", rom: "target/examples/dpl_test.fo", devices: [raw_io(port: 0), hex_io(port: 1)])''
 
 .rodata
   msg_kernel_start: db "kernel: setting up user context\n", 0
@@ -91,7 +91,6 @@ main:
 
   # Set up user register file
   MOV rw0, user_entry
-  OUT 1, rw0     
   TKR ip, rw0            # user ip = user_entry
   MOV rw0, 0xFFFFFFFF
   TKR sp, rw0            # user sp = top of stack

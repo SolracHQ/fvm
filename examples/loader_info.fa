@@ -2,7 +2,7 @@
 # Demonstrates offset arithmetic and reading structured binary data
 # 
 # Run with:
-#   just asm-exec '(mem_size: "16mb", rom: "target/examples/loader_info.fo", devices: [(type: "raw_io", port: 0, input: "stdin", output: "stdout"), (type: "hex_io", port: 1)])'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/loader_info.fo", devices: [raw_io(port: 0), hex_io(port: 1)])'
 
 .rodata
   sep: db "=======================================\n", 0
