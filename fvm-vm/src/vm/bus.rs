@@ -126,6 +126,16 @@ impl Bus {
         Ok(())
     }
 
+    pub fn read_physical_byte(&self, phys_addr: u32) -> VmResult<u8> {
+        let (device, offset) = self.resolve_physical(phys_addr)?;
+        device.read_byte(offset)
+    }
+
+    pub fn read_physical_u32(&self, phys_addr: u32) -> VmResult<u32> {
+        let (device, offset) = self.resolve_physical(phys_addr)?;
+        device.read_word(offset)
+    }
+
     pub fn mmap(
         &mut self,
         context: u32,

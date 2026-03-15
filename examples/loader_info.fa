@@ -1,0 +1,274 @@
+# Loader Info Reader - prints the loader info structure written by VM at startup
+# Demonstrates offset arithmetic and reading structured binary data
+# 
+# Run with:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/loader_info.fo", devices: [(type: "raw_io", port: 0, input: "stdin", output: "stdout"), (type: "hex_io", port: 1)])'
+
+.rodata
+  sep: db "=======================================\n", 0
+  header: db "       FVM Loader Info Structure       \n", 0
+  mem_section: db "\n[MEMORY REGIONS]\n", 0
+  mem_count: db "Count: ", 0
+  mem_entry: db "  Region ", 0
+  mem_id: db ": ID=", 0
+  mem_size: db " Size=", 0
+  
+  port_section: db "\n[PORT DEVICES]\n", 0
+  port_count: db "Count: ", 0
+  port_entry: db "  Device ", 0
+  port_id: db ": ID=", 0
+  port_num: db " Port=", 0
+  
+  map_section: db "\n[KERNEL MAPPINGS]\n", 0
+  map_count: db "Count: ", 0
+  map_entry: db "  Mapping ", 0
+  map_kind: db ": Kind=", 0
+  kind_loader: db "LoaderInfo", 0
+  kind_rodata: db "Rodata", 0
+  kind_code: db "Code", 0
+  kind_data: db "Data", 0
+  kind_stack: db "Stack", 0
+  map_phys: db " PhysicalBase=", 0
+  map_virt: db " VirtualBase=", 0
+  map_pages: db " Pages=", 0
+  
+  newline: db "\n", 0
+
+.code
+
+# Helper: print null-terminated string at address in rw1
+print_str:
+  .loop:
+    LOAD rb0, rw1
+    CMP rb0, 0
+    JZ .done
+    OUT 0, rb0
+    ADD rw1, 1
+    JMP .loop
+  .done:
+    RET
+
+# Helper: print 8-byte ASCII ID from address in rw1
+print_id:
+  MOV rb15, 0           # counter
+  .id_loop:
+    CMP rb15, 8
+    JZ .id_done
+    LOAD rb0, rw1
+    OUT 0, rb0            # print raw byte
+    ADD rw1, 1
+    ADD rb15, 1
+    JMP .id_loop
+  .id_done:
+    RET
+
+# Helper: print kernel mapping kind name based on kind byte in rb0
+# Kind values: 0=LoaderInfo, 1=Rodata, 2=Code, 3=Data, 4=Stack
+print_kind_name:
+  CMP rb0, 0
+  JZ .kind_0
+  CMP rb0, 1
+  JZ .kind_1
+  CMP rb0, 2
+  JZ .kind_2
+  CMP rb0, 3
+  JZ .kind_3
+  CMP rb0, 4
+  JZ .kind_4
+  # Unknown kind
+  OUT 0, rb0
+  RET
+  
+  .kind_0:
+    MOV rw1, kind_loader
+    CALL print_str
+    RET
+  .kind_1:
+    MOV rw1, kind_rodata
+    CALL print_str
+    RET
+  .kind_2:
+    MOV rw1, kind_code
+    CALL print_str
+    RET
+  .kind_3:
+    MOV rw1, kind_data
+    CALL print_str
+    RET
+  .kind_4:
+    MOV rw1, kind_stack
+    CALL print_str
+    RET
+
+main:
+  MOV rw1, sep
+  CALL print_str
+  MOV rw1, header
+  CALL print_str
+  MOV rw1, sep
+  CALL print_str
+  
+  # === MEMORY REGIONS ===
+  MOV rw1, mem_section
+  CALL print_str
+  
+  # Read memory regions count at offset 0
+  MOV rw0, 0x0
+  LOAD rw2, rw0         # rw2 = memory regions count
+  MOV rw1, mem_count
+  CALL print_str
+  OUT 1, rw2
+  MOV rw1, newline
+  CALL print_str
+  
+  MOV rw3, 0            # region index
+  MOV rw4, 4            # current offset in buffer
+  
+  .mem_loop:
+    CMP rw3, rw2
+    JZ .mem_done
+    
+    MOV rw1, mem_entry
+    CALL print_str
+    OUT 1, rw3           # print region index
+    MOV rw1, mem_id
+    CALL print_str
+    
+    # Print 8-byte ID as ASCII (at offset 8 within region)
+    MOV rw1, rw4
+    ADD rw1, 8           # ID is at offset 8
+    CALL print_id
+    
+    MOV rw1, mem_size
+    CALL print_str
+    
+    # Load size field at offset 4 within region
+    MOV rw5, rw4
+    ADD rw5, 4           # size is at offset 4
+    LOAD rw5, rw5        # load size value
+    OUT 1, rw5
+    
+    MOV rw1, newline
+    CALL print_str
+    
+    ADD rw4, 24          # next region (24 bytes each)
+    ADD rw3, 1
+    JMP .mem_loop
+  
+  .mem_done:
+  
+  # === PORT DEVICES ===
+  MOV rw1, port_section
+  CALL print_str
+  
+  # Read port devices count from current offset
+  LOAD rw2, rw4         # rw2 = port devices count
+  MOV rw1, port_count
+  CALL print_str
+  OUT 1, rw2
+  MOV rw1, newline
+  CALL print_str
+  
+  ADD rw4, 4            # skip count field, point to first device
+  MOV rw3, 0            # device index
+  
+  .port_loop:
+    CMP rw3, rw2
+    JZ .port_done
+    
+    MOV rw1, port_entry
+    CALL print_str
+    OUT 1, rw3           # print device index
+    MOV rw1, port_id
+    CALL print_str
+    
+    # Print 8-byte ID as ASCII
+    MOV rw1, rw4         # rw1 = address of ID
+    CALL print_id
+    
+    MOV rw1, port_num
+    CALL print_str
+    
+    # Load port number at offset 8 within device
+    MOV rw5, rw4
+    ADD rw5, 8           # add offset to address
+    LOAD rw5, rw5        # load port value
+    OUT 1, rw5
+    
+    MOV rw1, newline
+    CALL print_str
+    
+    ADD rw4, 12          # next device (12 bytes each)
+    ADD rw3, 1
+    JMP .port_loop
+  
+  .port_done:
+  
+  # === KERNEL MAPPINGS ===
+  MOV rw1, map_section
+  CALL print_str
+  
+  # Read kernel mappings count from current offset
+  LOAD rw2, rw4         # rw2 = kernel mappings count
+  MOV rw1, map_count
+  CALL print_str
+  OUT 1, rw2
+  MOV rw1, newline
+  CALL print_str
+  
+  ADD rw4, 4            # skip count field, point to first mapping
+  MOV rw3, 0            # mapping index
+  
+  .map_loop:
+    CMP rw3, rw2
+    JZ .map_done
+    
+    MOV rw1, map_entry
+    CALL print_str
+    OUT 1, rw3           # print mapping index
+    MOV rw1, map_kind
+    CALL print_str
+    
+    # Read kind (1 byte at offset 0)
+    LOAD rb0, rw4
+    CALL print_kind_name
+    
+    MOV rw1, map_phys
+    CALL print_str
+    
+    # Load physical_base at offset 1 within mapping
+    MOV rw5, rw4
+    ADD rw5, 1           # add offset to address
+    LOAD rw5, rw5        # load physical_base value
+    OUT 1, rw5
+    
+    MOV rw1, map_virt
+    CALL print_str
+    
+    # Load virtual_base at offset 5 within mapping
+    MOV rw5, rw4
+    ADD rw5, 5           # add offset to address
+    LOAD rw5, rw5        # load virtual_base value
+    OUT 1, rw5
+    
+    MOV rw1, map_pages
+    CALL print_str
+    
+    # Load pages at offset 9 within mapping
+    MOV rw5, rw4
+    ADD rw5, 9           # add offset to address
+    LOAD rw5, rw5        # load pages value
+    OUT 1, rw5
+    
+    MOV rw1, newline
+    CALL print_str
+    
+    ADD rw4, 13          # next mapping (13 bytes each)
+    ADD rw3, 1
+    JMP .map_loop
+  
+  .map_done:
+  MOV rw1, sep
+  CALL print_str
+  
+  HALT

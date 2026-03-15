@@ -2,6 +2,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use fvm_core::types::Word;
 
+fn stdin() -> String {
+    "stdin".to_string()
+}
+
+fn stdout() -> String {
+    "stdout".to_string()
+}
+
 /// Parse human-readable memory sizes like "128mb", "2gb", "512kb", or raw bytes as u32.
 fn parse_memory_size<'de, D>(deserializer: D) -> Result<Word, D::Error>
 where
@@ -152,8 +160,10 @@ pub enum DeviceConfig {
         /// Port-mapped I/O port for the device, must be unique across devices.
         port: Word,
         /// Input stream for the device. The device will read lines from this stream and parse them as decimal integers when the VM reads from the device.
+        #[serde(default = "stdin")]
         input: String,
         /// Output stream for the device. The device will write decimal integers to this stream when the VM writes to the device.
+        #[serde(default = "stdout")]
         output: String,
         #[serde(default)]
         general: GeneralDeviceConfig,
@@ -163,8 +173,10 @@ pub enum DeviceConfig {
         /// Port-mapped I/O port for the device, must be unique across devices.
         port: Word,
         /// Input stream for the device. Each line is a hexadecimal byte such as `0x41` or `41`.
+        #[serde(default = "stdin")]
         input: String,
         /// Output stream for the device. Writes one hexadecimal byte per line.
+        #[serde(default = "stdout")]
         output: String,
         #[serde(default)]
         general: GeneralDeviceConfig,
@@ -175,8 +187,10 @@ pub enum DeviceConfig {
         /// Port-mapped I/O port for the device, must be unique across devices.
         port: Word,
         /// Input stream for the device. Bytes are read directly as-is.
+        #[serde(default = "stdin")]
         input: String,
         /// Output stream for the device. Bytes are written directly as-is.
+        #[serde(default = "stdout")]
         output: String,
         #[serde(default)]
         general: GeneralDeviceConfig,
