@@ -82,7 +82,7 @@ impl PortMappedDevice for HexIo {
         })
     }
 
-    fn write_half(&self, port: Word, value: u16) -> VmResult<()> {
+    fn write_half(&self, _port: Word, value: u16) -> VmResult<()> {
         let mut output = self.output.borrow_mut();
         writeln!(output, "0x{value:04X}").map_err(|e| VmError::DeviceError {
             device: self.id(),
@@ -96,7 +96,7 @@ impl PortMappedDevice for HexIo {
         })
     }
 
-    fn write_word(&self, port: Word, value: Word) -> VmResult<()> {
+    fn write_word(&self, _port: Word, value: Word) -> VmResult<()> {
         let mut output = self.output.borrow_mut();
         writeln!(output, "0x{value:08X}").map_err(|e| VmError::DeviceError {
             device: self.id(),

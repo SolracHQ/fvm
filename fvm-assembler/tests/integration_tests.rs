@@ -4,7 +4,6 @@
 mod tests {
     use fvm_assembler::assembler;
     use fvm_core::section::Section;
-    use fvm_core::types::{Byte, Word};
 
     #[test]
     fn test_assemble_nop_halt() {
@@ -423,7 +422,7 @@ main:
   MMAP rw6, rw7, 4096
   MUNMAP rw9, rw10
   MUNMAP rw9, 4096
-  MPROTECT rw11, rb4
+  MPROTECT rw1, rw2, rb3
   HALT
         "#;
         let result = assembler::assemble_source(source);

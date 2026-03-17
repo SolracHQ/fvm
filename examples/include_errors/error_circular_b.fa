@@ -1,0 +1,3 @@
+# Error example: circular include, second half.
+
+#include "error_circular_a.fa"

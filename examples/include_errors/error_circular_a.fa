@@ -1,0 +1,13 @@
+# Error example: circular include, first half.
+#
+# Run with:
+#   just asm-example include_errors/error_circular_a
+#
+# Expected: the preprocessor reports a circular include between
+# error_circular_a.fa and error_circular_b.fa.
+
+#include "error_circular_b.fa"
+
+.code
+main:
+    HALT

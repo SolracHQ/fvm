@@ -1,0 +1,8 @@
+# Optional trace output.
+#
+# The parent file sets rb0 before including this block. If TRACE_IO is defined
+# we emit that byte to port 0. release.fa disables this with #undef TRACE_IO.
+
+#ifdef TRACE_IO
+OUT 0, rb0
+#endif

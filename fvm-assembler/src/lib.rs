@@ -5,5 +5,5 @@
 pub mod assembler;
 pub mod error;
 
-pub use assembler::assemble_source;
+pub use assembler::{assemble_file, assemble_source, AssemblyArtifacts};
 pub use error::{AssemblerError, Result};

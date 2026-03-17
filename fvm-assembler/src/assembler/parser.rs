@@ -1,7 +1,10 @@
+use std::ops::Range;
+
+use super::files::FileId;
 use super::lexer::{Token, TokenKind};
+use super::syntax::{LabelRef, ParsedArgument, ParsedInstruction};
 use crate::error::{AssemblerError, Result};
 use fvm_core::argument::Argument;
-use fvm_core::instruction::Instruction;
 use fvm_core::opcode::Op;
 use fvm_core::register::RegisterEncoding;
 use fvm_core::section::Section;
@@ -10,14 +13,14 @@ use fvm_core::section::Section;
 pub type SectionOffset = u32;
 
 pub struct ParsedFile {
-    pub rodata: Vec<Argument>,
-    pub code: Vec<Instruction>,
-    pub data: Vec<Argument>,
+    pub rodata: Vec<ParsedArgument>,
+    pub code: Vec<ParsedInstruction>,
+    pub data: Vec<ParsedArgument>,
     pub labels: std::collections::HashMap<String, (Section, SectionOffset)>,
 }
 
 // Byte size of a data-section argument list up to but not including index `end`.
-fn data_byte_offset(args: &[Argument], end: usize) -> SectionOffset {
+fn data_byte_offset(args: &[ParsedArgument], end: usize) -> SectionOffset {
     args[..end].iter().map(|a| a.size() as u32).sum()
 }
 
@@ -49,18 +52,14 @@ impl Parser {
         tok
     }
 
-    fn expect_ident(&mut self) -> Result<(String, u32, u32)> {
+    fn expect_ident(&mut self) -> Result<(String, FileId, Range<usize>)> {
         let tok = self.peek(0).clone();
         match &tok.kind {
             TokenKind::Ident(s) => {
                 self.advance();
-                Ok((s.clone(), tok.line, tok.col))
+                Ok((s.clone(), tok.file, tok.span.clone()))
             }
-            _ => Err(AssemblerError::parse(
-                tok.line,
-                tok.col,
-                "Expected identifier",
-            )),
+            _ => Err(tok.parse_error("Expected identifier")),
         }
     }
 
@@ -71,7 +70,7 @@ impl Parser {
                 self.advance();
                 Ok(())
             }
-            _ => Err(AssemblerError::parse(tok.line, tok.col, "Expected ','")),
+            _ => Err(tok.parse_error("Expected ','")),
         }
     }
 
@@ -89,11 +88,7 @@ impl Parser {
                 self.advance();
                 Ok(())
             }
-            _ => Err(AssemblerError::parse(
-                tok.line,
-                tok.col,
-                "Expected end of line",
-            )),
+            _ => Err(tok.parse_error("Expected end of line")),
         }
     }
 }
@@ -144,7 +139,11 @@ fn parse_register(tok: &Token) -> Option<RegisterEncoding> {
 
 // Data directives
 
-fn parse_db(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
+fn parse_db(
+    parser: &mut Parser,
+    file: FileId,
+    span: Range<usize>,
+) -> Result<Vec<ParsedArgument>> {
     let mut out = Vec::new();
     loop {
         let tok = parser.peek(0).clone();
@@ -152,22 +151,18 @@ fn parse_db(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
             TokenKind::Number(n) => {
                 let n = *n;
                 if n > 0xFF {
-                    return Err(AssemblerError::parse(
-                        tok.line,
-                        tok.col,
-                        "db value out of u8 range",
-                    ));
+                    return Err(tok.parse_error("db value out of u8 range"));
                 }
-                out.push(Argument::Inmm8(n as u8));
+                out.push(ParsedArgument::Value(Argument::Inmm8(n as u8)));
                 parser.advance();
             }
             TokenKind::Char(c) => {
-                out.push(Argument::Inmm8(*c));
+                out.push(ParsedArgument::Value(Argument::Inmm8(*c)));
                 parser.advance();
             }
             TokenKind::String(bytes) => {
                 for &b in bytes {
-                    out.push(Argument::Inmm8(b));
+                    out.push(ParsedArgument::Value(Argument::Inmm8(b)));
                 }
                 parser.advance();
             }
@@ -182,16 +177,16 @@ fn parse_db(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
     }
 
     if out.is_empty() {
-        return Err(AssemblerError::parse(
-            line,
-            col,
-            "db requires at least one operand",
-        ));
+        return Err(AssemblerError::parse(file, span, "db requires at least one operand"));
     }
     Ok(out)
 }
 
-fn parse_dh(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
+fn parse_dh(
+    parser: &mut Parser,
+    file: FileId,
+    span: Range<usize>,
+) -> Result<Vec<ParsedArgument>> {
     let mut out = Vec::new();
     loop {
         let tok = parser.peek(0).clone();
@@ -199,13 +194,9 @@ fn parse_dh(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
             TokenKind::Number(n) => {
                 let n = *n;
                 if n > 0xFFFF {
-                    return Err(AssemblerError::parse(
-                        tok.line,
-                        tok.col,
-                        "dh value out of u16 range",
-                    ));
+                    return Err(tok.parse_error("dh value out of u16 range"));
                 }
-                out.push(Argument::Inmm16(n as u16));
+                out.push(ParsedArgument::Value(Argument::Inmm16(n as u16)));
                 parser.advance();
             }
             _ => break,
@@ -219,26 +210,30 @@ fn parse_dh(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
     }
 
     if out.is_empty() {
-        return Err(AssemblerError::parse(
-            line,
-            col,
-            "dh requires at least one operand",
-        ));
+        return Err(AssemblerError::parse(file, span, "dh requires at least one operand"));
     }
     Ok(out)
 }
 
-fn parse_dw(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
+fn parse_dw(
+    parser: &mut Parser,
+    file: FileId,
+    span: Range<usize>,
+) -> Result<Vec<ParsedArgument>> {
     let mut out = Vec::new();
     loop {
         let tok = parser.peek(0).clone();
         match &tok.kind {
             TokenKind::Number(n) => {
-                out.push(Argument::Inmm32(*n));
+                out.push(ParsedArgument::Value(Argument::Inmm32(*n)));
                 parser.advance();
             }
             TokenKind::Ident(name) => {
-                out.push(Argument::UnresolvedLabel(name.clone(), line, col));
+                out.push(ParsedArgument::LabelRef(LabelRef {
+                    name: name.clone(),
+                    file,
+                    span: tok.span.clone(),
+                }));
                 parser.advance();
             }
             _ => break,
@@ -252,174 +247,162 @@ fn parse_dw(parser: &mut Parser, line: u32, col: u32) -> Result<Vec<Argument>> {
     }
 
     if out.is_empty() {
-        return Err(AssemblerError::parse(
-            line,
-            col,
-            "dw requires at least one operand",
-        ));
+        return Err(AssemblerError::parse(file, span, "dw requires at least one operand"));
     }
     Ok(out)
 }
 
 // Instruction operand parsing
 
-fn parse_label(parser: &mut Parser, line: u32, col: u32) -> Result<Argument> {
+fn parse_label(parser: &mut Parser, file: FileId, span: Range<usize>) -> Result<ParsedArgument> {
     let tok = parser.peek(0).clone();
     if matches!(tok.kind, TokenKind::Dot) {
         parser.advance(); // consume '.'
-        let (local, lline, lcol) = parser.expect_ident()?;
+        let (local, lfile, lspan) = parser.expect_ident()?;
         let global = parser.current_global.as_deref().ok_or_else(|| {
             AssemblerError::parse(
-                lline,
-                lcol,
+                lfile,
+                lspan.clone(),
                 "Local label reference without a preceding global label",
             )
         })?;
         let full_name = format!("{global}.{local}");
-        Ok(Argument::UnresolvedLabel(full_name, lline, lcol))
+        Ok(ParsedArgument::LabelRef(LabelRef {
+            name: full_name,
+            file: lfile,
+            span: lspan,
+        }))
     } else if let TokenKind::Ident(_) = &tok.kind {
-        let (name, line, col) = parser.expect_ident()?;
-        Ok(Argument::UnresolvedLabel(name, line, col))
+        let (name, file, span) = parser.expect_ident()?;
+        Ok(ParsedArgument::LabelRef(LabelRef { name, file, span }))
     } else {
-        Err(AssemblerError::parse(line, col, "Expected label"))
+        Err(AssemblerError::parse(file, span, "Expected label"))
     }
 }
 
-fn parse_imm_or_label(parser: &mut Parser) -> Result<Argument> {
+fn parse_imm_or_label(parser: &mut Parser) -> Result<ParsedArgument> {
     let tok = parser.peek(0).clone();
     match &tok.kind {
         TokenKind::Number(n) => {
             parser.advance();
-            Ok(Argument::Inmm32(*n))
+            Ok(ParsedArgument::Value(Argument::Inmm32(*n)))
         }
         TokenKind::Char(c) => {
             parser.advance();
-            Ok(Argument::Inmm8(*c))
+            Ok(ParsedArgument::Value(Argument::Inmm8(*c)))
         }
-        TokenKind::Dot | TokenKind::Ident(_) => parse_label(parser, tok.line, tok.col),
-        _ => Err(AssemblerError::parse(
-            tok.line,
-            tok.col,
-            "Expected immediate or label",
-        )),
+        TokenKind::Dot | TokenKind::Ident(_) => parse_label(parser, tok.file, tok.span.clone()),
+        _ => Err(tok.parse_error("Expected immediate or label")),
     }
 }
 
-fn parse_reg_or_imm(parser: &mut Parser, line: u32, col: u32) -> Result<Argument> {
+fn parse_reg_or_imm(
+    parser: &mut Parser,
+    file: FileId,
+    span: Range<usize>,
+) -> Result<ParsedArgument> {
     let tok = parser.peek(0).clone();
     if let Some(reg) = parse_register(&tok) {
         parser.advance();
-        return Ok(Argument::Register(reg));
+        return Ok(ParsedArgument::Value(Argument::Register(reg)));
     }
     match &tok.kind {
         TokenKind::Number(n) => {
             parser.advance();
-            Ok(Argument::Inmm32(*n))
+            Ok(ParsedArgument::Value(Argument::Inmm32(*n)))
         }
         TokenKind::Char(c) => {
             parser.advance();
-            Ok(Argument::Inmm8(*c))
+            Ok(ParsedArgument::Value(Argument::Inmm8(*c)))
         }
-        TokenKind::Dot | TokenKind::Ident(_) => parse_label(parser, tok.line, tok.col),
-        _ => Err(AssemblerError::parse(
-            line,
-            col,
-            "Expected register, immediate, or label",
-        )),
+        TokenKind::Dot | TokenKind::Ident(_) => parse_label(parser, tok.file, tok.span.clone()),
+        _ => Err(AssemblerError::parse(file, span, "Expected register, immediate, or label")),
     }
 }
 
-fn parse_shift_amount(parser: &mut Parser, mnemonic: &str) -> Result<Argument> {
+fn parse_shift_amount(parser: &mut Parser, mnemonic: &str) -> Result<ParsedArgument> {
     let tok = parser.peek(0).clone();
     if let Some(reg) = parse_register(&tok) {
         if !reg.is_rb() {
-            return Err(AssemblerError::parse(
-                tok.line,
-                tok.col,
-                format!("{mnemonic}: shift amount register must be rb"),
-            ));
+            return Err(tok.parse_error(format!("{mnemonic}: shift amount register must be rb")));
         }
         parser.advance();
-        return Ok(Argument::Register(reg));
+        return Ok(ParsedArgument::Value(Argument::Register(reg)));
     }
 
     match tok.kind {
         TokenKind::Number(n) => {
             if n > 0xFF {
-                return Err(AssemblerError::parse(
-                    tok.line,
-                    tok.col,
-                    format!("{mnemonic}: shift amount immediate must fit in u8"),
-                ));
+                return Err(tok.parse_error(format!(
+                    "{mnemonic}: shift amount immediate must fit in u8"
+                )));
             }
             parser.advance();
-            Ok(Argument::Inmm8(n as u8))
+            Ok(ParsedArgument::Value(Argument::Inmm8(n as u8)))
         }
         TokenKind::Char(c) => {
             parser.advance();
-            Ok(Argument::Inmm8(c))
+            Ok(ParsedArgument::Value(Argument::Inmm8(c)))
         }
-        _ => Err(AssemblerError::parse(
-            tok.line,
-            tok.col,
-            format!("{mnemonic}: expected rb register or imm8 shift amount"),
-        )),
+        _ => Err(tok.parse_error(format!(
+            "{mnemonic}: expected rb register or imm8 shift amount"
+        ))),
     }
 }
 
-fn parse_u32_or_rw(parser: &mut Parser, mnemonic: &str, operand_name: &str) -> Result<Argument> {
+fn parse_u32_or_rw(
+    parser: &mut Parser,
+    mnemonic: &str,
+    operand_name: &str,
+) -> Result<ParsedArgument> {
     let tok = parser.peek(0).clone();
     if let Some(reg) = parse_register(&tok) {
         if !reg.is_rw() {
-            return Err(AssemblerError::parse(
-                tok.line,
-                tok.col,
-                format!("{mnemonic}: {operand_name} register must be rw"),
-            ));
+            return Err(tok.parse_error(format!(
+                "{mnemonic}: {operand_name} register must be rw"
+            )));
         }
         parser.advance();
-        return Ok(Argument::Register(reg));
+        return Ok(ParsedArgument::Value(Argument::Register(reg)));
     }
 
     match tok.kind {
         TokenKind::Number(n) => {
             parser.advance();
-            Ok(Argument::Inmm32(n))
+            Ok(ParsedArgument::Value(Argument::Inmm32(n)))
         }
-        _ => Err(AssemblerError::parse(
-            tok.line,
-            tok.col,
-            format!("{mnemonic}: expected rw register or imm32 for {operand_name}"),
-        )),
+        _ => Err(tok.parse_error(format!(
+            "{mnemonic}: expected rw register or imm32 for {operand_name}"
+        ))),
     }
 }
 
 // Narrow an Inmm32 to Inmm8/Inmm16 based on destination register width,
 // or keep it as Inmm32. Returns an error if the value is out of range.
-fn fit_imm(arg: Argument, width: u8, line: u32, col: u32) -> Result<Argument> {
+fn fit_imm(arg: ParsedArgument, file: FileId, span: Range<usize>, width: u8) -> Result<ParsedArgument> {
     match arg {
-        Argument::Inmm32(n) => match width {
+        ParsedArgument::Value(Argument::Inmm32(n)) => match width {
             1 => {
                 if n > 0xFF {
                     return Err(AssemblerError::parse(
-                        line,
-                        col,
+                        file,
+                        span,
                         "Immediate out of range for 8-bit register",
                     ));
                 }
-                Ok(Argument::Inmm8(n as u8))
+                Ok(ParsedArgument::Value(Argument::Inmm8(n as u8)))
             }
             2 => {
                 if n > 0xFFFF {
                     return Err(AssemblerError::parse(
-                        line,
-                        col,
+                        file,
+                        span,
                         "Immediate out of range for 16-bit register",
                     ));
                 }
-                Ok(Argument::Inmm16(n as u16))
+                Ok(ParsedArgument::Value(Argument::Inmm16(n as u16)))
             }
-            _ => Ok(Argument::Inmm32(n)),
+            _ => Ok(ParsedArgument::Value(Argument::Inmm32(n))),
         },
         other => Ok(other),
     }
@@ -427,16 +410,16 @@ fn fit_imm(arg: Argument, width: u8, line: u32, col: u32) -> Result<Argument> {
 
 // Opcode selection helpers: pick the reg-reg or reg-imm variant.
 
-fn pick_alu(reg_op: Op, imm_op: Op, src: &Argument) -> Op {
+fn pick_alu(reg_op: Op, imm_op: Op, src: &ParsedArgument) -> Op {
     match src {
-        Argument::Register(_) => reg_op,
+        ParsedArgument::Value(Argument::Register(_)) => reg_op,
         _ => imm_op,
     }
 }
 
-fn pick_jump(label_op: Op, reg_op: Op, target: &Argument) -> Op {
+fn pick_jump(label_op: Op, reg_op: Op, target: &ParsedArgument) -> Op {
     match target {
-        Argument::Register(_) => reg_op,
+        ParsedArgument::Value(Argument::Register(_)) => reg_op,
         _ => label_op,
     }
 }
@@ -446,23 +429,39 @@ fn pick_jump(label_op: Op, reg_op: Op, target: &Argument) -> Op {
 fn parse_instruction(
     parser: &mut Parser,
     mnemonic: &str,
-    line: u32,
-    col: u32,
-) -> Result<Instruction> {
-    let no_args = [Argument::None, Argument::None, Argument::None];
+    file: FileId,
+    span: Range<usize>,
+) -> Result<ParsedInstruction> {
+    let no_args = [
+        ParsedArgument::Value(Argument::None),
+        ParsedArgument::Value(Argument::None),
+        ParsedArgument::Value(Argument::None),
+    ];
 
     macro_rules! inst {
         ($op:expr) => {
-            Instruction::new($op, no_args, 0)
+            ParsedInstruction::new($op, no_args, 0)
         };
         ($op:expr, $a:expr) => {
-            Instruction::new($op, [$a, Argument::None, Argument::None], 1)
+            ParsedInstruction::new(
+                $op,
+                [
+                    $a,
+                    ParsedArgument::Value(Argument::None),
+                    ParsedArgument::Value(Argument::None),
+                ],
+                1,
+            )
         };
         ($op:expr, $a:expr, $b:expr) => {
-            Instruction::new($op, [$a, $b, Argument::None], 2)
+            ParsedInstruction::new(
+                $op,
+                [$a, $b, ParsedArgument::Value(Argument::None)],
+                2,
+            )
         };
         ($op:expr, $a:expr, $b:expr, $c:expr) => {
-            Instruction::new($op, [$a, $b, $c], 3)
+            ParsedInstruction::new($op, [$a, $b, $c], 3)
         };
     }
 
@@ -475,53 +474,34 @@ fn parse_instruction(
 
         "PUSH" => {
             let tok = parser.peek(0).clone();
-            let reg = parse_register(&tok).ok_or_else(|| {
-                AssemblerError::parse(tok.line, tok.col, "PUSH expects a register")
-            })?;
+            let reg = parse_register(&tok).ok_or_else(|| tok.parse_error("PUSH expects a register"))?;
             parser.advance();
-            Ok(inst!(Op::Push, Argument::Register(reg)))
+            Ok(inst!(Op::Push, ParsedArgument::Value(Argument::Register(reg))))
         }
 
         "POP" => {
             let tok = parser.peek(0).clone();
-            let reg = parse_register(&tok).ok_or_else(|| {
-                AssemblerError::parse(tok.line, tok.col, "POP expects a register")
-            })?;
+            let reg = parse_register(&tok).ok_or_else(|| tok.parse_error("POP expects a register"))?;
             parser.advance();
-            Ok(inst!(Op::Pop, Argument::Register(reg)))
+            Ok(inst!(Op::Pop, ParsedArgument::Value(Argument::Register(reg))))
         }
 
         "NOT" => {
             let tok = parser.peek(0).clone();
-            let reg = parse_register(&tok).ok_or_else(|| {
-                AssemblerError::parse(tok.line, tok.col, "NOT expects a register")
-            })?;
+            let reg = parse_register(&tok).ok_or_else(|| tok.parse_error("NOT expects a register"))?;
             parser.advance();
-            Ok(inst!(Op::Not, Argument::Register(reg)))
+            Ok(inst!(Op::Not, ParsedArgument::Value(Argument::Register(reg))))
         }
 
         "MOV" => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "MOV: expected destination register",
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error("MOV: expected destination register"))?;
             if dst.is_ip() {
-                return Err(AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "MOV: ip is not a valid destination; use TKR ip, rw",
-                ));
+                return Err(dst_tok.parse_error("MOV: ip is not a valid destination; use TKR ip, rw"));
             }
             if dst.is_cr() {
-                return Err(AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "MOV: cr is not a valid destination; use TKR cr, rw",
-                ));
+                return Err(dst_tok.parse_error("MOV: cr is not a valid destination; use TKR cr, rw"));
             }
             parser.advance();
             parser.expect_comma()?;
@@ -529,107 +509,78 @@ fn parse_instruction(
             let src_tok = parser.peek(0).clone();
             if let Some(src_reg) = parse_register(&src_tok) {
                 if src_reg.is_ip() {
-                    return Err(AssemblerError::parse(
-                        src_tok.line,
-                        src_tok.col,
-                        "MOV: ip is not a valid source; use TUR rw, ip",
-                    ));
+                    return Err(src_tok.parse_error("MOV: ip is not a valid source; use TUR rw, ip"));
                 }
                 parser.advance();
                 if dst.width_bytes() != src_reg.width_bytes() && !dst.is_sp() && !src_reg.is_sp() {
-                    return Err(AssemblerError::parse(
-                        src_tok.line,
-                        src_tok.col,
-                        "MOV: register views must have the same width",
-                    ));
+                    return Err(src_tok.parse_error("MOV: register views must have the same width"));
                 }
                 Ok(inst!(
                     Op::MovRegReg,
-                    Argument::Register(dst),
-                    Argument::Register(src_reg)
+                    ParsedArgument::Value(Argument::Register(dst)),
+                    ParsedArgument::Value(Argument::Register(src_reg))
                 ))
             } else {
                 let imm = parse_imm_or_label(parser)?;
-                let imm = fit_imm(imm, dst.width_bytes(), src_tok.line, src_tok.col)?;
-                Ok(inst!(Op::MovRegImm, Argument::Register(dst), imm))
+                let imm = fit_imm(imm, src_tok.file, src_tok.span.clone(), dst.width_bytes())?;
+                Ok(inst!(
+                    Op::MovRegImm,
+                    ParsedArgument::Value(Argument::Register(dst)),
+                    imm
+                ))
             }
         }
 
         "ZEXT" => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "ZEXT: expected destination register",
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error("ZEXT: expected destination register"))?;
             parser.advance();
             parser.expect_comma()?;
             let src_tok = parser.peek(0).clone();
-            let src = parse_register(&src_tok).ok_or_else(|| {
-                AssemblerError::parse(src_tok.line, src_tok.col, "ZEXT: expected source register")
-            })?;
+            let src = parse_register(&src_tok)
+                .ok_or_else(|| src_tok.parse_error("ZEXT: expected source register"))?;
             parser.advance();
             if dst.width_bytes() <= src.width_bytes() {
-                return Err(AssemblerError::parse(
-                    src_tok.line,
-                    src_tok.col,
-                    "ZEXT: destination must be wider than source",
-                ));
+                return Err(src_tok.parse_error("ZEXT: destination must be wider than source"));
             }
             Ok(inst!(
                 Op::ZeroExtend,
-                Argument::Register(dst),
-                Argument::Register(src)
+                ParsedArgument::Value(Argument::Register(dst)),
+                ParsedArgument::Value(Argument::Register(src))
             ))
         }
 
         "SEXT" => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "SEXT: expected destination register",
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error("SEXT: expected destination register"))?;
             parser.advance();
             parser.expect_comma()?;
             let src_tok = parser.peek(0).clone();
-            let src = parse_register(&src_tok).ok_or_else(|| {
-                AssemblerError::parse(src_tok.line, src_tok.col, "SEXT: expected source register")
-            })?;
+            let src = parse_register(&src_tok)
+                .ok_or_else(|| src_tok.parse_error("SEXT: expected source register"))?;
             parser.advance();
             if dst.width_bytes() <= src.width_bytes() {
-                return Err(AssemblerError::parse(
-                    src_tok.line,
-                    src_tok.col,
-                    "SEXT: destination must be wider than source",
-                ));
+                return Err(src_tok.parse_error("SEXT: destination must be wider than source"));
             }
             Ok(inst!(
                 Op::SignExtend,
-                Argument::Register(dst),
-                Argument::Register(src)
+                ParsedArgument::Value(Argument::Register(dst)),
+                ParsedArgument::Value(Argument::Register(src))
             ))
         }
 
-        op @ ("ADD" | "SUB" | "AND" | "OR" | "XOR" | "CMP") => {
+        op @ ("ADD" | "SUB" | "AND" | "OR" | "XOR" | "CMP" | "MUL" | "DIV" | "MOD" | "SMUL" | "SDIV" | "SMOD") => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    format!("{op}: expected destination register"),
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error(format!("{op}: expected destination register")))?;
             parser.advance();
             parser.expect_comma()?;
 
             let src_tok = parser.peek(0).clone();
-            let src = parse_reg_or_imm(parser, src_tok.line, src_tok.col)?;
-            let src = fit_imm(src, dst.width_bytes(), src_tok.line, src_tok.col)?;
+            let src = parse_reg_or_imm(parser, src_tok.file, src_tok.span.clone())?;
+            let src = fit_imm(src, src_tok.file, src_tok.span.clone(), dst.width_bytes())?;
 
             let (reg_op, imm_op) = match op {
                 "ADD" => (Op::Add, Op::AddImm),
@@ -638,21 +589,22 @@ fn parse_instruction(
                 "OR" => (Op::Or, Op::OrImm),
                 "XOR" => (Op::Xor, Op::XorImm),
                 "CMP" => (Op::Cmp, Op::CmpImm),
+                "MUL" => (Op::Mul, Op::MulImm),
+                "DIV" => (Op::Div, Op::DivImm),
+                "MOD" => (Op::Mod, Op::ModImm),
+                "SMUL" => (Op::Smul, Op::SmulImm),
+                "SDIV" => (Op::Sdiv, Op::SdivImm),
+                "SMOD" => (Op::Smod, Op::SmodImm),
                 _ => unreachable!(),
             };
             let op = pick_alu(reg_op, imm_op, &src);
-            Ok(inst!(op, Argument::Register(dst), src))
+            Ok(inst!(op, ParsedArgument::Value(Argument::Register(dst)), src))
         }
 
         op @ ("SHL" | "SHR" | "SAR" | "ROL" | "ROR") => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    format!("{op}: expected destination register"),
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error(format!("{op}: expected destination register")))?;
             parser.advance();
             parser.expect_comma()?;
 
@@ -666,18 +618,20 @@ fn parse_instruction(
                 _ => unreachable!(),
             };
             let op = pick_alu(reg_op, imm_op, &src);
-            Ok(inst!(op, Argument::Register(dst), src))
+            Ok(inst!(op, ParsedArgument::Value(Argument::Register(dst)), src))
         }
 
-        op @ ("JMP" | "JZ" | "JNZ" | "JC" | "JN") => {
+        op @ ("JMP" | "JZ" | "JNZ" | "JC" | "JN" | "JO" | "JNO") => {
             let tok = parser.peek(0).clone();
-            let target = parse_reg_or_imm(parser, tok.line, tok.col)?;
+            let target = parse_reg_or_imm(parser, tok.file, tok.span.clone())?;
             let (label_op, reg_op) = match op {
                 "JMP" => (Op::Jmp, Op::JmpReg),
                 "JZ" => (Op::Jz, Op::JzReg),
                 "JNZ" => (Op::Jnz, Op::JnzReg),
                 "JC" => (Op::Jc, Op::JcReg),
                 "JN" => (Op::Jn, Op::JnReg),
+                "JO" => (Op::Jo, Op::JoReg),
+                "JNO" => (Op::Jno, Op::JnoReg),
                 _ => unreachable!(),
             };
             let op = pick_jump(label_op, reg_op, &target);
@@ -686,47 +640,34 @@ fn parse_instruction(
 
         "CALL" => {
             let tok = parser.peek(0).clone();
-            let target = parse_reg_or_imm(parser, tok.line, tok.col)?;
+            let target = parse_reg_or_imm(parser, tok.file, tok.span.clone())?;
             let op = pick_jump(Op::Call, Op::CallReg, &target);
             Ok(inst!(op, target))
         }
 
         "IN" => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "IN: expected destination register",
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error("IN: expected destination register"))?;
             parser.advance();
             parser.expect_comma()?;
             let port_tok = parser.peek(0).clone();
             let port = match &port_tok.kind {
                 TokenKind::Number(n) => {
                     if *n > 0xFF {
-                        return Err(AssemblerError::parse(
-                            port_tok.line,
-                            port_tok.col,
-                            "IN: port must fit in u8",
-                        ));
+                        return Err(port_tok.parse_error("IN: port must fit in u8"));
                     }
                     *n as u8
                 }
                 _ => {
-                    return Err(AssemblerError::parse(
-                        port_tok.line,
-                        port_tok.col,
-                        "IN: expected port number",
-                    ));
+                    return Err(port_tok.parse_error("IN: expected port number"));
                 }
             };
             parser.advance();
             Ok(inst!(
                 Op::In,
-                Argument::Register(dst),
-                Argument::Inmm8(port)
+                ParsedArgument::Value(Argument::Register(dst)),
+                ParsedArgument::Value(Argument::Inmm8(port))
             ))
         }
 
@@ -735,132 +676,94 @@ fn parse_instruction(
             let port = match &port_tok.kind {
                 TokenKind::Number(n) => {
                     if *n > 0xFF {
-                        return Err(AssemblerError::parse(
-                            port_tok.line,
-                            port_tok.col,
-                            "OUT: port must fit in u8",
-                        ));
+                        return Err(port_tok.parse_error("OUT: port must fit in u8"));
                     }
                     *n as u8
                 }
                 _ => {
-                    return Err(AssemblerError::parse(
-                        port_tok.line,
-                        port_tok.col,
-                        "OUT: expected port number",
-                    ));
+                    return Err(port_tok.parse_error("OUT: expected port number"));
                 }
             };
             parser.advance();
             parser.expect_comma()?;
             let src_tok = parser.peek(0).clone();
-            let src = parse_register(&src_tok).ok_or_else(|| {
-                AssemblerError::parse(src_tok.line, src_tok.col, "OUT: expected source register")
-            })?;
+            let src = parse_register(&src_tok)
+                .ok_or_else(|| src_tok.parse_error("OUT: expected source register"))?;
             parser.advance();
             Ok(inst!(
                 Op::Out,
-                Argument::Inmm8(port),
-                Argument::Register(src)
+                ParsedArgument::Value(Argument::Inmm8(port)),
+                ParsedArgument::Value(Argument::Register(src))
             ))
         }
 
         "LOAD" => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    "LOAD: expected destination register",
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error("LOAD: expected destination register"))?;
             parser.advance();
             parser.expect_comma()?;
             let addr_tok = parser.peek(0).clone();
-            let addr = parse_register(&addr_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    addr_tok.line,
-                    addr_tok.col,
-                    "LOAD: expected address register",
-                )
-            })?;
+            let addr = parse_register(&addr_tok)
+                .ok_or_else(|| addr_tok.parse_error("LOAD: expected address register"))?;
             parser.advance();
             if !addr.is_rw() {
-                return Err(AssemblerError::parse(
-                    addr_tok.line,
-                    addr_tok.col,
-                    "LOAD: address register must be rw",
-                ));
+                return Err(addr_tok.parse_error("LOAD: address register must be rw"));
             }
             Ok(inst!(
                 Op::Load,
-                Argument::Register(dst),
-                Argument::Register(addr)
+                ParsedArgument::Value(Argument::Register(dst)),
+                ParsedArgument::Value(Argument::Register(addr))
             ))
         }
 
         "STORE" => {
             let addr_tok = parser.peek(0).clone();
-            let addr = parse_register(&addr_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    addr_tok.line,
-                    addr_tok.col,
-                    "STORE: expected address register",
-                )
-            })?;
+            let addr = parse_register(&addr_tok)
+                .ok_or_else(|| addr_tok.parse_error("STORE: expected address register"))?;
             parser.advance();
             if !addr.is_rw() {
-                return Err(AssemblerError::parse(
-                    addr_tok.line,
-                    addr_tok.col,
-                    "STORE: address register must be rw",
-                ));
+                return Err(addr_tok.parse_error("STORE: address register must be rw"));
             }
             parser.expect_comma()?;
             let src_tok = parser.peek(0).clone();
-            let src = parse_register(&src_tok).ok_or_else(|| {
-                AssemblerError::parse(src_tok.line, src_tok.col, "STORE: expected source register")
-            })?;
+            let src = parse_register(&src_tok)
+                .ok_or_else(|| src_tok.parse_error("STORE: expected source register"))?;
             parser.advance();
             Ok(inst!(
                 Op::Store,
-                Argument::Register(addr),
-                Argument::Register(src)
+                ParsedArgument::Value(Argument::Register(addr)),
+                ParsedArgument::Value(Argument::Register(src))
             ))
         }
 
         "SIE" => {
             let idx_tok = parser.peek(0).clone();
-            let idx = parse_register(&idx_tok).ok_or_else(|| {
-                AssemblerError::parse(idx_tok.line, idx_tok.col, "SIE: expected index register")
-            })?;
+            let idx = parse_register(&idx_tok)
+                .ok_or_else(|| idx_tok.parse_error("SIE: expected index register"))?;
             if !idx.is_rb() {
-                return Err(AssemblerError::parse(
-                    idx_tok.line,
-                    idx_tok.col,
-                    "SIE: index register must be rb",
-                ));
+                return Err(idx_tok.parse_error("SIE: index register must be rb"));
             }
             parser.advance();
             parser.expect_comma()?;
             let addr_tok = parser.peek(0).clone();
             if let Some(addr_reg) = parse_register(&addr_tok) {
                 if !addr_reg.is_rw() {
-                    return Err(AssemblerError::parse(
-                        addr_tok.line,
-                        addr_tok.col,
-                        "SIE: handler register must be rw",
-                    ));
+                    return Err(addr_tok.parse_error("SIE: handler register must be rw"));
                 }
                 parser.advance();
                 Ok(inst!(
                     Op::SieRegReg,
-                    Argument::Register(idx),
-                    Argument::Register(addr_reg)
+                    ParsedArgument::Value(Argument::Register(idx)),
+                    ParsedArgument::Value(Argument::Register(addr_reg))
                 ))
             } else {
                 let imm = parse_imm_or_label(parser)?;
-                Ok(inst!(Op::SieRegImm, Argument::Register(idx), imm))
+                Ok(inst!(
+                    Op::SieRegImm,
+                    ParsedArgument::Value(Argument::Register(idx)),
+                    imm
+                ))
             }
         }
 
@@ -868,59 +771,34 @@ fn parse_instruction(
             let tok = parser.peek(0).clone();
             if let Some(reg) = parse_register(&tok) {
                 if !reg.is_rb() {
-                    return Err(AssemblerError::parse(
-                        tok.line,
-                        tok.col,
-                        "INT: register form requires rb",
-                    ));
+                    return Err(tok.parse_error("INT: register form requires rb"));
                 }
                 parser.advance();
-                Ok(inst!(Op::IntReg, Argument::Register(reg)))
+                Ok(inst!(Op::IntReg, ParsedArgument::Value(Argument::Register(reg))))
             } else if let TokenKind::Number(n) = tok.kind {
                 parser.advance();
                 if n > 0xFF {
-                    return Err(AssemblerError::parse(
-                        tok.line,
-                        tok.col,
-                        "INT: vector index must fit in u8",
-                    ));
+                    return Err(tok.parse_error("INT: vector index must fit in u8"));
                 }
-                Ok(inst!(Op::IntImm, Argument::Inmm8(n as u8)))
+                Ok(inst!(Op::IntImm, ParsedArgument::Value(Argument::Inmm8(n as u8))))
             } else {
-                Err(AssemblerError::parse(
-                    tok.line,
-                    tok.col,
-                    "INT: expected vector index or register",
-                ))
+                Err(tok.parse_error("INT: expected vector index or register"))
             }
         }
 
         op @ ("TUR" | "TKR") => {
             let dst_tok = parser.peek(0).clone();
-            let dst = parse_register(&dst_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    dst_tok.line,
-                    dst_tok.col,
-                    format!("{op}: expected destination register"),
-                )
-            })?;
+            let dst = parse_register(&dst_tok)
+                .ok_or_else(|| dst_tok.parse_error(format!("{op}: expected destination register")))?;
             match op {
                 "TKR" => {
                     if !dst.is_rw() && !dst.is_ip() && !dst.is_cr() && !dst.is_sp(){
-                        return Err(AssemblerError::parse(
-                            dst_tok.line,
-                            dst_tok.col,
-                            "TKR: destination must be rw, ip, cr, or sp",
-                        ));
+                        return Err(dst_tok.parse_error("TKR: destination must be rw, ip, cr, or sp"));
                     }
                 }
                 _ => {
                     if !dst.is_rw() {
-                        return Err(AssemblerError::parse(
-                            dst_tok.line,
-                            dst_tok.col,
-                            "TUR: destination register must be rw",
-                        ));
+                        return Err(dst_tok.parse_error("TUR: destination register must be rw"));
                     }
                 }
             }
@@ -928,30 +806,17 @@ fn parse_instruction(
             parser.expect_comma()?;
 
             let src_tok = parser.peek(0).clone();
-            let src = parse_register(&src_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    src_tok.line,
-                    src_tok.col,
-                    format!("{op}: expected source register"),
-                )
-            })?;
+            let src = parse_register(&src_tok)
+                .ok_or_else(|| src_tok.parse_error(format!("{op}: expected source register")))?;
             match op {
                 "TUR" => {
                     if !src.is_rw() && !src.is_ip() && !src.is_cr() {
-                        return Err(AssemblerError::parse(
-                            src_tok.line,
-                            src_tok.col,
-                            "TUR: source must be rw, ip, or cr",
-                        ));
+                        return Err(src_tok.parse_error("TUR: source must be rw, ip, or cr"));
                     }
                 }
                 _ => {
                     if !src.is_rw() {
-                        return Err(AssemblerError::parse(
-                            src_tok.line,
-                            src_tok.col,
-                            "TKR: source register must be rw",
-                        ));
+                        return Err(src_tok.parse_error("TKR: source register must be rw"));
                     }
                 }
             }
@@ -964,44 +829,26 @@ fn parse_instruction(
             };
             Ok(inst!(
                 opcode,
-                Argument::Register(dst),
-                Argument::Register(src)
+                ParsedArgument::Value(Argument::Register(dst)),
+                ParsedArgument::Value(Argument::Register(src))
             ))
         }
 
         "MMAP" => {
             let virt_tok = parser.peek(0).clone();
-            let virt = parse_register(&virt_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    virt_tok.line,
-                    virt_tok.col,
-                    "MMAP: expected virtual address register",
-                )
-            })?;
+            let virt = parse_register(&virt_tok)
+                .ok_or_else(|| virt_tok.parse_error("MMAP: expected virtual address register"))?;
             if !virt.is_rw() {
-                return Err(AssemblerError::parse(
-                    virt_tok.line,
-                    virt_tok.col,
-                    "MMAP: virtual address register must be rw",
-                ));
+                return Err(virt_tok.parse_error("MMAP: virtual address register must be rw"));
             }
             parser.advance();
             parser.expect_comma()?;
 
             let phys_tok = parser.peek(0).clone();
-            let phys = parse_register(&phys_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    phys_tok.line,
-                    phys_tok.col,
-                    "MMAP: expected physical address register",
-                )
-            })?;
+            let phys = parse_register(&phys_tok)
+                .ok_or_else(|| phys_tok.parse_error("MMAP: expected physical address register"))?;
             if !phys.is_rw() {
-                return Err(AssemblerError::parse(
-                    phys_tok.line,
-                    phys_tok.col,
-                    "MMAP: physical address register must be rw",
-                ));
+                return Err(phys_tok.parse_error("MMAP: physical address register must be rw"));
             }
             parser.advance();
             parser.expect_comma()?;
@@ -1010,51 +857,37 @@ fn parse_instruction(
             let opcode = pick_alu(Op::MmapRegRegReg, Op::MmapRegRegImm, &size);
             Ok(inst!(
                 opcode,
-                Argument::Register(virt),
-                Argument::Register(phys),
+                ParsedArgument::Value(Argument::Register(virt)),
+                ParsedArgument::Value(Argument::Register(phys)),
                 size
             ))
         }
 
         "MUNMAP" => {
             let virt_tok = parser.peek(0).clone();
-            let virt = parse_register(&virt_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    virt_tok.line,
-                    virt_tok.col,
-                    "MUNMAP: expected virtual address register",
-                )
-            })?;
+            let virt = parse_register(&virt_tok)
+                .ok_or_else(|| virt_tok.parse_error("MUNMAP: expected virtual address register"))?;
             if !virt.is_rw() {
-                return Err(AssemblerError::parse(
-                    virt_tok.line,
-                    virt_tok.col,
-                    "MUNMAP: virtual address register must be rw",
-                ));
+                return Err(virt_tok.parse_error("MUNMAP: virtual address register must be rw"));
             }
             parser.advance();
             parser.expect_comma()?;
 
             let size = parse_u32_or_rw(parser, "MUNMAP", "size")?;
             let opcode = pick_alu(Op::MunmapRegReg, Op::MunmapRegImm, &size);
-            Ok(inst!(opcode, Argument::Register(virt), size))
+            Ok(inst!(
+                opcode,
+                ParsedArgument::Value(Argument::Register(virt)),
+                size
+            ))
         }
 
         "MPROTECT" => {
             let virt_tok = parser.peek(0).clone();
-            let virt = parse_register(&virt_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    virt_tok.line,
-                    virt_tok.col,
-                    "MPROTECT: expected virtual page register",
-                )
-            })?;
+            let virt = parse_register(&virt_tok)
+                .ok_or_else(|| virt_tok.parse_error("MPROTECT: expected virtual page register"))?;
             if !virt.is_rw() {
-                return Err(AssemblerError::parse(
-                    virt_tok.line,
-                    virt_tok.col,
-                    "MPROTECT: virtual page register must be rw",
-                ));
+                return Err(virt_tok.parse_error("MPROTECT: virtual page register must be rw"));
             }
             parser.advance();
             parser.expect_comma()?;
@@ -1064,56 +897,39 @@ fn parse_instruction(
             parser.expect_comma()?;
 
             let perms_tok = parser.peek(0).clone();
-            let perms = parse_register(&perms_tok).ok_or_else(|| {
-                AssemblerError::parse(
-                    perms_tok.line,
-                    perms_tok.col,
-                    "MPROTECT: expected permissions register",
-                )
-            })?;
+            let perms = parse_register(&perms_tok)
+                .ok_or_else(|| perms_tok.parse_error("MPROTECT: expected permissions register"))?;
             if !perms.is_rb() {
-                return Err(AssemblerError::parse(
-                    perms_tok.line,
-                    perms_tok.col,
-                    "MPROTECT: permissions register must be rb",
-                ));
+                return Err(perms_tok.parse_error("MPROTECT: permissions register must be rb"));
             }
             parser.advance();
 
             let opcode = match &page_count {
-                Argument::Register(_) => Op::MprotectRegRegRb,
+                ParsedArgument::Value(Argument::Register(_)) => Op::MprotectRegRegRb,
                 _ => Op::MprotectRegImmRb,
             };
 
             Ok(inst!(
                 opcode,
-                Argument::Register(virt),
+                ParsedArgument::Value(Argument::Register(virt)),
                 page_count,
-                Argument::Register(perms)
+                ParsedArgument::Value(Argument::Register(perms))
             ))
         }
 
-        _ => Err(AssemblerError::parse(
-            line,
-            col,
-            format!("Unknown mnemonic: {mnemonic}"),
-        )),
+        _ => Err(AssemblerError::parse(file, span, format!("Unknown mnemonic: {mnemonic}"))),
     }
 }
 
 // Section directive parsing
 
 fn parse_section_directive(parser: &mut Parser) -> Result<Section> {
-    let (name, nline, ncol) = parser.expect_ident()?;
+    let (name, nfile, nspan) = parser.expect_ident()?;
     match name.as_str() {
         "rodata" => Ok(Section::RoData),
         "code" => Ok(Section::Code),
         "data" => Ok(Section::Data),
-        _ => Err(AssemblerError::parse(
-            nline,
-            ncol,
-            format!("Unknown section: .{name}"),
-        )),
+        _ => Err(AssemblerError::parse(nfile, nspan, format!("Unknown section: .{name}"))),
     }
 }
 
@@ -1125,10 +941,14 @@ fn parse_dot_item(parser: &mut Parser) -> Result<DotItem> {
         && matches!(parser.peek(1).kind, TokenKind::Colon);
 
     if is_local_label {
-        let (local, lline, lcol) = parser.expect_ident()?;
+        let (local, lfile, lspan) = parser.expect_ident()?;
         parser.advance(); // consume ':'
         let global = parser.current_global.as_deref().ok_or_else(|| {
-            AssemblerError::parse(lline, lcol, "Local label without a preceding global label")
+            AssemblerError::parse(
+                lfile,
+                lspan.clone(),
+                "Local label without a preceding global label",
+            )
         })?;
         let full_name = format!("{global}.{local}");
         return Ok(DotItem::LocalLabel(full_name));
@@ -1146,9 +966,9 @@ enum DotItem {
 // Top-level entry
 
 pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
-    let mut rodata: Vec<Argument> = Vec::new();
-    let mut code: Vec<Instruction> = Vec::new();
-    let mut data: Vec<Argument> = Vec::new();
+    let mut rodata: Vec<ParsedArgument> = Vec::new();
+    let mut code: Vec<ParsedInstruction> = Vec::new();
+    let mut data: Vec<ParsedArgument> = Vec::new();
     let mut labels: std::collections::HashMap<String, (Section, SectionOffset)> =
         std::collections::HashMap::new();
 
@@ -1178,8 +998,8 @@ pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
                         };
                         if labels.contains_key(&full_name) {
                             return Err(AssemblerError::parse(
-                                tok.line,
-                                tok.col,
+                                tok.file,
+                                tok.span.clone(),
                                 format!("Duplicate label: {full_name}"),
                             ));
                         }
@@ -1190,7 +1010,7 @@ pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
 
             // Global label: ident ':'
             TokenKind::Ident(_) if matches!(parser.peek(1).kind, TokenKind::Colon) => {
-                let (name, lline, lcol) = parser.expect_ident()?;
+                let (name, lfile, lspan) = parser.expect_ident()?;
                 parser.advance(); // consume ':'
 
                 let offset = match section {
@@ -1201,8 +1021,8 @@ pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
 
                 if labels.contains_key(&name) {
                     return Err(AssemblerError::parse(
-                        lline,
-                        lcol,
+                        lfile,
+                        lspan.clone(),
                         format!("Duplicate label: {name}"),
                     ));
                 }
@@ -1213,23 +1033,23 @@ pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
             // Data directive or instruction mnemonic
             TokenKind::Ident(ident) => {
                 let ident = ident.clone();
-                let iline = tok.line;
-                let icol = tok.col;
+                let ifile = tok.file;
+                let ispan = tok.span.clone();
                 parser.advance();
 
                 match ident.as_str() {
                     "db" | "dh" | "dw" => {
                         if matches!(section, Section::Code) {
                             return Err(AssemblerError::parse(
-                                iline,
-                                icol,
+                                ifile,
+                                ispan.clone(),
                                 "Data directives are not allowed in .code",
                             ));
                         }
                         let args = match ident.as_str() {
-                            "db" => parse_db(&mut parser, iline, icol)?,
-                            "dh" => parse_dh(&mut parser, iline, icol)?,
-                            "dw" => parse_dw(&mut parser, iline, icol)?,
+                            "db" => parse_db(&mut parser, ifile, ispan.clone())?,
+                            "dh" => parse_dh(&mut parser, ifile, ispan.clone())?,
+                            "dw" => parse_dw(&mut parser, ifile, ispan.clone())?,
                             _ => unreachable!(),
                         };
                         match section {
@@ -1242,12 +1062,12 @@ pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
                     mnemonic => {
                         if !matches!(section, Section::Code) {
                             return Err(AssemblerError::parse(
-                                iline,
-                                icol,
+                                ifile,
+                                ispan.clone(),
                                 "Instructions are only allowed in .code",
                             ));
                         }
-                        let inst = parse_instruction(&mut parser, mnemonic, iline, icol)?;
+                        let inst = parse_instruction(&mut parser, mnemonic, ifile, ispan.clone())?;
                         parser.expect_eol()?;
                         code.push(inst);
                     }
@@ -1255,11 +1075,7 @@ pub fn parse(mut parser: &mut Parser) -> Result<ParsedFile> {
             }
 
             _ => {
-                return Err(AssemblerError::parse(
-                    tok.line,
-                    tok.col,
-                    format!("Unexpected token: {:?}", tok.kind),
-                ));
+                return Err(tok.parse_error(format!("Unexpected token: {:?}", tok.kind)));
             }
         }
     }

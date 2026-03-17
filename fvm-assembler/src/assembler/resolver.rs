@@ -1,4 +1,5 @@
 use super::parser::ParsedFile;
+use super::syntax::{ParsedArgument, ParsedInstruction};
 use crate::error::{AssemblerError, Result};
 use fvm_core::argument::Argument;
 use fvm_core::instruction::Instruction;
@@ -12,30 +13,50 @@ pub struct ResolvedFile {
     pub labels: std::collections::HashMap<String, u32>,
 }
 
-fn rodata_byte_len(args: &[Argument]) -> u32 {
+fn rodata_byte_len(args: &[ParsedArgument]) -> u32 {
     args.iter().map(|a| a.size() as u32).sum()
 }
 
-fn code_byte_len(instructions: &[Instruction]) -> u32 {
+fn code_byte_len(instructions: &[ParsedInstruction]) -> u32 {
     instructions.iter().map(|i| i.size as u32).sum()
 }
 
 fn resolve_arg(
-    arg: &Argument,
+    arg: &ParsedArgument,
     resolved_labels: &std::collections::HashMap<String, (Section, u32)>,
 ) -> Result<Argument> {
     match arg {
-        Argument::UnresolvedLabel(name, line, col) => {
-            let (section, addr) = resolved_labels.get(name).copied().ok_or_else(|| {
-                AssemblerError::resolver(*line, *col, format!("Undefined label: {name}"))
-            })?;
+        ParsedArgument::LabelRef(label_ref) => {
+            let (section, addr) = resolved_labels
+                .get(&label_ref.name)
+                .copied()
+                .ok_or_else(|| {
+                    AssemblerError::resolver(
+                        label_ref.file,
+                        label_ref.span.clone(),
+                        format!("Undefined label: {}", label_ref.name),
+                    )
+                })?;
             Ok(Argument::Label {
                 address: addr,
                 section,
             })
         }
-        other => Ok(other.clone()),
+        ParsedArgument::Value(argument) => Ok(argument.clone()),
     }
+}
+
+fn resolve_instruction(
+    inst: ParsedInstruction,
+    resolved_labels: &std::collections::HashMap<String, (Section, u32)>,
+) -> Result<Instruction> {
+    let mut args = [Argument::None, Argument::None, Argument::None];
+
+    for (index, arg) in inst.arguments.iter().take(inst.argument_count).enumerate() {
+        args[index] = resolve_arg(arg, resolved_labels)?;
+    }
+
+    Ok(Instruction::new(inst.opcode, args, inst.argument_count))
 }
 
 pub fn resolve(parsed: ParsedFile) -> Result<ResolvedFile> {
@@ -61,13 +82,7 @@ pub fn resolve(parsed: ParsedFile) -> Result<ResolvedFile> {
     let code = parsed
         .code
         .into_iter()
-        .map(|inst| {
-            let mut args = inst.arguments;
-            for arg in args.iter_mut().take(inst.argument_count) {
-                *arg = resolve_arg(arg, &resolved_labels)?;
-            }
-            Ok(Instruction::new(inst.opcode, args, inst.argument_count))
-        })
+        .map(|inst| resolve_instruction(inst, &resolved_labels))
         .collect::<Result<Vec<_>>>()?;
 
     // Patch data-section label references (e.g. `dw some_label`).

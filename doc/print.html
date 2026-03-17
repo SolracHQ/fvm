@@ -1,0 +1,1375 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>FVM Reference</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-731dd728.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-3a034a08.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">FVM Reference</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="fvm-documentation"><a class="header" href="#fvm-documentation">FVM documentation</a></h1>
+<ul>
+<li><a href="#fvm-assembly">Assembly language</a> - the <code>.fa</code> language, registers, instructions, assembler directives</li>
+<li><a href="#overview">Virtual machine</a> - memory model, privilege, interrupts, binary format</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fvm-assembly"><a class="header" href="#fvm-assembly">FVM Assembly</a></h1>
+<p>Fantasy Assembly (<code>.fa</code>) is the assembly language for the FVM. Goal is simplicity: easy to
+read, easy to parse, easy to execute. Each opcode is one byte and each register operand is one
+byte; wasteful but keeps the toolchain trivial.</p>
+<h2 id="instruction-format"><a class="header" href="#instruction-format">Instruction format</a></h2>
+<pre><code>MNEMONIC
+MNEMONIC TARGET
+MNEMONIC TARGET, SOURCE
+</code></pre>
+<p>Comments start with <code>#</code> and continue to the end of the line.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="registers"><a class="header" href="#registers">Registers</a></h1>
+<p>16 general-purpose registers plus <code>sp</code> (stack pointer), <code>cr</code> (context register), <code>ip</code>
+(instruction pointer), and <code>mr</code> (mapping register). Each general-purpose register has three
+views that share the same underlying storage:</p>
+<ul>
+<li><code>rw0</code>..<code>rw15</code>: full 32-bit register</li>
+<li><code>rh0</code>..<code>rh15</code>: low 16 bits of the corresponding <code>rw</code> register</li>
+<li><code>rb0</code>..<code>rb15</code>: low 8 bits of the corresponding <code>rh</code> register</li>
+</ul>
+<p>Writing a narrower view never touches bits outside that view. To promote a narrower value to a
+wider register use <code>ZEXT</code> or <code>SEXT</code>.</p>
+<pre><code>MOV  rw0, 0xDEADBEEF   # rw0 = 0xDEADBEEF
+MOV  rh0, 0x1234       # rw0 = 0xDEAD1234, upper 16 untouched
+MOV  rb0, 0xFF         # rw0 = 0xDEAD12FF, upper 24 untouched
+</code></pre>
+<p>The width of an operation is determined by the register view used, not the mnemonic. Mixing
+views of different widths in a single instruction is an assembler error; use <code>ZEXT</code> or <code>SEXT</code>
+to promote first.</p>
+<h2 id="sp"><a class="header" href="#sp">sp</a></h2>
+<p>Separate register, not part of the <code>rw</code>/<code>rh</code>/<code>rb</code> file. Normal writable register: you can
+read it into a general register, do arithmetic on it, and write it back directly.</p>
+<h2 id="cr"><a class="header" href="#cr">cr</a></h2>
+<p>Holds the active address space context identifier used for virtual address translation. Part
+of each register file and switches with it on a mode change. Readable in any mode, but writing
+it directly in user mode raises interrupt 6. The kernel sets the user CR before <code>DPL</code> via
+<code>TKR cr, rw</code>.</p>
+<h2 id="ip"><a class="header" href="#ip">ip</a></h2>
+<p>Holds the current instruction pointer. Readable in any mode via <code>TUR</code>, writable only from
+kernel mode via <code>TKR</code>. Not directly writable by general instructions. The kernel uses
+<code>TKR ip, rw</code> to set the user entry point before <code>DPL</code>.</p>
+<h2 id="mr"><a class="header" href="#mr">mr</a></h2>
+<p>Holds the target context for memory mapping operations. <code>MMAP</code>, <code>MUNMAP</code>, and <code>MPROTECT</code> all
+consult <code>mr</code> instead of <code>cr</code> when selecting which context to modify. Readable and writable
+only from kernel mode. Initialized to 0 on VM start. Write it with <code>MOV mr, rw</code> before
+issuing mapping instructions for a new context, then restore it to 0 when done.</p>
+<pre><code>MOV  mr, rw0    # target mappings at context in rw0
+MMAP ...        # modifies context mr, not cr
+MOV  mr, 0      # restore
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="assembler"><a class="header" href="#assembler">Assembler</a></h1>
+<h2 id="immediates"><a class="header" href="#immediates">Immediates</a></h2>
+<p>Plain decimal, <code>0x</code> hex, <code>0o</code> octal: <code>42</code>, <code>0xFF</code>, <code>0o17</code>.</p>
+<p>Character literals: <code>'A'</code> expands to the ASCII value of the character. Supported escape
+sequences: <code>\n</code>, <code>\t</code>, <code>\0</code>, <code>\\</code>, <code>\'</code>.</p>
+<p>Width is determined by the destination register view: 32-bit for <code>rw</code>, 16-bit for <code>rh</code>, 8-bit
+for <code>rb</code>. The assembler enforces the range and rejects values that do not fit.</p>
+<h2 id="sections"><a class="header" href="#sections">Sections</a></h2>
+<p>A source file can contain up to three sections. The default section when no directive is
+present is <code>.code</code>.</p>
+<pre><code>.rodata
+    greeting: db "Hello", 0
+    table:    dw 0x12345678, 0xDEADBEEF
+
+.code
+main:
+    MOV rw0, greeting
+    HALT
+
+.data
+    counter: dw 0
+</code></pre>
+<p>Section layout at runtime is determined by the loader. Each non-empty section is placed at the
+next 4 kb boundary after the previous region, following the fault info region at the start of
+the address space. The stack is always mapped to <code>0xFFC00000..0xFFFFFFFF</code>. See the VM
+reference for the full layout.</p>
+<p>Labels defined in <code>.rodata</code> or <code>.data</code> resolve to their loaded address and are usable as
+<code>imm32</code> operands in <code>.code</code>.</p>
+<h2 id="data-directives"><a class="header" href="#data-directives">Data directives</a></h2>
+<p>Used inside <code>.rodata</code> or <code>.data</code> sections to emit raw bytes.</p>
+<pre><code>db 0x41, 0x42, 0x43         # emit bytes
+db "Hello", 0               # string shorthand, null must be explicit
+dh 0x1234, 0x5678           # emit 16-bit big-endian half-words
+dw 0x12345678, 0xDEADBEEF   # emit 32-bit big-endian words
+dw some_label               # emit a label address as a 32-bit word
+</code></pre>
+<p><code>db</code> accepts any mix of integer literals and quoted strings in a single directive. A string is
+expanded to its ASCII bytes with no implicit null terminator; add a trailing <code>, 0</code> if needed.</p>
+<p><code>dw</code> accepts label names as operands. The assembler emits a relocation entry for each one so
+the loader can patch the address to the actual loaded location.</p>
+<h2 id="labels"><a class="header" href="#labels">Labels</a></h2>
+<p>A label marks the byte address of the next instruction or data item. Two kinds:</p>
+<ul>
+<li>Global: bare identifier followed by <code>:</code>. Visible everywhere in the file.</li>
+<li>Local: dot-prefixed identifier followed by <code>:</code>. Scoped to the preceding global label. The
+assembler expands <code>.name</code> to <code>global.name</code> internally, so <code>.loop</code> under <code>multiply:</code> becomes
+<code>multiply.loop</code> and does not conflict with <code>.loop</code> under <code>divide:</code>.</li>
+</ul>
+<pre><code>multiply:
+    MOV rw0, 0
+.loop:
+    ADD rw0, rw1
+    SUB rw2, 1
+    JNZ .loop
+    HALT
+
+divide:
+.loop:          # divide.loop, no conflict with multiply.loop
+    HALT
+</code></pre>
+<p>Identifier rules:</p>
+<pre><code>global:  [a-zA-Z_][a-zA-Z0-9_]* ':'
+local:   '.' [a-zA-Z_][a-zA-Z0-9_]* ':'
+</code></pre>
+<p>Labels are valid as <code>imm32</code> operands anywhere a 32-bit immediate is accepted. <code>MOV rw0, some_label</code>
+loads the address of <code>some_label</code> into <code>rw0</code>.</p>
+<h2 id="preprocessor"><a class="header" href="#preprocessor">Preprocessor</a></h2>
+<p>The preprocessor runs before the assembler sees anything. It handles file inclusion,
+conditional compilation, and text substitution. All preprocessor directives start with <code>#</code>
+and occupy their own line.</p>
+<h3 id="include"><a class="header" href="#include">#include</a></h3>
+<pre><code>#include "path/to/file.fa"
+</code></pre>
+<p>Inserts the contents of the given file at the point of the directive. The path is relative to
+the including file. Circular includes are detected and cause an error.</p>
+<p>Use include guards to make files safe to include more than once:</p>
+<pre><code>#ifndef MY_DEFS_FA
+#define MY_DEFS_FA
+
+# ... your definitions ...
+
+#endif
+</code></pre>
+<h3 id="define-and-undef"><a class="header" href="#define-and-undef">#define and #undef</a></h3>
+<pre><code>#define NAME
+#define NAME value
+#undef NAME
+</code></pre>
+<p><code>#define NAME</code> with no value just marks <code>NAME</code> as defined, useful for <code>#ifdef</code> guards.
+<code>#define NAME value</code> replaces every occurrence of <code>NAME</code> in subsequent source lines with
+<code>value</code> before the assembler tokenizes them.</p>
+<pre><code>#define PAGE_SIZE 4096
+#define STACK_TOP 0xFFFFFFFF
+
+MOV rw0, PAGE_SIZE   # assembler sees: MOV rw0, 4096
+</code></pre>
+<h3 id="ifdef--ifndef--else--endif"><a class="header" href="#ifdef--ifndef--else--endif">#ifdef / #ifndef / #else / #endif</a></h3>
+<pre><code>#ifdef NAME
+    # included if NAME is defined
+#else
+    # included if NAME is not defined
+#endif
+
+#ifndef NAME
+    # included if NAME is not defined
+#endif
+</code></pre>
+<p>Conditionals can be nested. Each <code>#ifdef</code> or <code>#ifndef</code> needs a matching <code>#endif</code>.</p>
+<pre><code>#define DEBUG
+
+#ifdef DEBUG
+    OUT 0, rb0      # log register value
+#endif
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="instructions"><a class="header" href="#instructions">Instructions</a></h1>
+<p>Quick reference. Click any mnemonic for the full description.</p>
+<h2 id="data-movement"><a class="header" href="#data-movement">Data movement</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#mov">MOV</a></td><td><code>dst, src</code></td><td>Copy a value between registers or load an immediate</td></tr>
+<tr><td><a href="#push">PUSH</a></td><td><code>reg</code></td><td>Decrement SP, write register to stack</td></tr>
+<tr><td><a href="#pop">POP</a></td><td><code>reg</code></td><td>Read from stack, increment SP</td></tr>
+<tr><td><a href="#zext">ZEXT</a></td><td><code>dst, src</code></td><td>Zero-extend a narrower view into a wider register</td></tr>
+<tr><td><a href="#sext">SEXT</a></td><td><code>dst, src</code></td><td>Sign-extend a narrower view into a wider register</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="arithmetic"><a class="header" href="#arithmetic">Arithmetic</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#add">ADD</a></td><td><code>dst, src</code></td><td>Add, result in dst. Flags: C, N</td></tr>
+<tr><td><a href="#sub">SUB</a></td><td><code>dst, src</code></td><td>Subtract, result in dst. Flags: C, N</td></tr>
+<tr><td><a href="#cmp">CMP</a></td><td><code>dst, src</code></td><td>Subtract and set flags, discard result. Flags: Z, C, N</td></tr>
+<tr><td><a href="#mul">MUL</a></td><td><code>dst, src</code></td><td>Unsigned multiply, result in dst. Flags: C, O, N</td></tr>
+<tr><td><a href="#smul">SMUL</a></td><td><code>dst, src</code></td><td>Signed multiply, result in dst. Flags: C, O, N</td></tr>
+<tr><td><a href="#div">DIV</a></td><td><code>dst, src</code></td><td>Unsigned divide, result in dst. Flags: N</td></tr>
+<tr><td><a href="#sdiv">SDIV</a></td><td><code>dst, src</code></td><td>Signed divide, result in dst. Flags: N</td></tr>
+<tr><td><a href="#mod">MOD</a></td><td><code>dst, src</code></td><td>Unsigned modulo, result in dst. Flags: N</td></tr>
+<tr><td><a href="#smod">SMOD</a></td><td><code>dst, src</code></td><td>Signed modulo, result in dst. Flags: N</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="bitwise"><a class="header" href="#bitwise">Bitwise</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#and">AND</a></td><td><code>dst, src</code></td><td>Bitwise AND. Flags: N</td></tr>
+<tr><td><a href="#or">OR</a></td><td><code>dst, src</code></td><td>Bitwise OR. Flags: N</td></tr>
+<tr><td><a href="#xor">XOR</a></td><td><code>dst, src</code></td><td>Bitwise XOR. Flags: N</td></tr>
+<tr><td><a href="#not">NOT</a></td><td><code>dst</code></td><td>Bitwise NOT in place. Flags: N</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="shifts-and-rotations"><a class="header" href="#shifts-and-rotations">Shifts and rotations</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#shl">SHL</a></td><td><code>dst, n</code></td><td>Shift left logical. Flags: Z, N, C</td></tr>
+<tr><td><a href="#shr">SHR</a></td><td><code>dst, n</code></td><td>Shift right logical. Flags: Z, N, C</td></tr>
+<tr><td><a href="#sar">SAR</a></td><td><code>dst, n</code></td><td>Shift right arithmetic. Flags: Z, N, C</td></tr>
+<tr><td><a href="#rol">ROL</a></td><td><code>dst, n</code></td><td>Rotate left. Flags: Z, N</td></tr>
+<tr><td><a href="#ror">ROR</a></td><td><code>dst, n</code></td><td>Rotate right. Flags: Z, N</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="control-flow"><a class="header" href="#control-flow">Control flow</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#jmp">JMP</a></td><td><code>target</code></td><td>Unconditional jump</td></tr>
+<tr><td><a href="#jz">JZ</a></td><td><code>target</code></td><td>Jump if zero flag set</td></tr>
+<tr><td><a href="#jnz">JNZ</a></td><td><code>target</code></td><td>Jump if zero flag clear</td></tr>
+<tr><td><a href="#jc">JC</a></td><td><code>target</code></td><td>Jump if carry flag set</td></tr>
+<tr><td><a href="#jn">JN</a></td><td><code>target</code></td><td>Jump if negative flag set</td></tr>
+<tr><td><a href="#jo">JO</a></td><td><code>target</code></td><td>Jump if overflow flag set</td></tr>
+<tr><td><a href="#jno">JNO</a></td><td><code>target</code></td><td>Jump if overflow flag clear</td></tr>
+<tr><td><a href="#call">CALL</a></td><td><code>target</code></td><td>Push return address, jump to target</td></tr>
+<tr><td><a href="#ret">RET</a></td><td></td><td>Pop return address, jump to it</td></tr>
+<tr><td><a href="#call">CALL</a></td><td><code>target</code></td><td>Push return address, jump</td></tr>
+<tr><td><a href="#ret">RET</a></td><td>-</td><td>Pop return address, jump</td></tr>
+<tr><td><a href="#nop">NOP</a></td><td>-</td><td>No operation</td></tr>
+<tr><td><a href="#halt">HALT</a></td><td>-</td><td>Stop execution</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="io"><a class="header" href="#io">I/O</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#in">IN</a></td><td><code>dst, port</code></td><td>Read from I/O port into register</td></tr>
+<tr><td><a href="#out">OUT</a></td><td><code>port, src</code></td><td>Write register to I/O port</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="memory"><a class="header" href="#memory">Memory</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#load">LOAD</a></td><td><code>dst, addr</code></td><td>Load from address in register</td></tr>
+<tr><td><a href="#store">STORE</a></td><td><code>addr, src</code></td><td>Store to address in register</td></tr>
+<tr><td><a href="#mmap">MMAP</a></td><td><code>virt, phys, count</code></td><td>Map physical pages into a context. Privileged</td></tr>
+<tr><td><a href="#munmap">MUNMAP</a></td><td><code>virt, count</code></td><td>Unmap pages from a context. Privileged</td></tr>
+<tr><td><a href="#mprotect">MPROTECT</a></td><td><code>virt, count, perms</code></td><td>Set page permissions. Privileged</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="system"><a class="header" href="#system">System</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Operands</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#sie">SIE</a></td><td><code>rb, handler</code></td><td>Set interrupt vector entry. Privileged</td></tr>
+<tr><td><a href="#int">INT</a></td><td><code>index</code></td><td>Raise software interrupt</td></tr>
+<tr><td><a href="#iret">IRET</a></td><td>-</td><td>Return from interrupt handler. Privileged</td></tr>
+<tr><td><a href="#dpl">DPL</a></td><td>-</td><td>Drop to user mode. Privileged</td></tr>
+<tr><td><a href="#tur">TUR</a></td><td><code>dst, src</code></td><td>Transfer user register to kernel register. Privileged</td></tr>
+<tr><td><a href="#tkr">TKR</a></td><td><code>dst, src</code></td><td>Transfer kernel register to user register. Privileged</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="data-movement-1"><a class="header" href="#data-movement-1">Data movement</a></h1>
+<h2 id="mov"><a class="header" href="#mov">MOV</a></h2>
+<p>Copies a value. Both operands must use the same register view.</p>
+<pre><code>MOV  rw, imm32
+MOV  rw, label      # loads the address of label as imm32
+MOV  rw, rw
+MOV  rw, sp
+MOV  sp, rw
+MOV  rw, cr
+MOV  cr, rw         # privileged, writes kernel cr only
+MOV  rw, mr
+MOV  mr, rw         # privileged
+MOV  rh, imm16
+MOV  rh, rh
+MOV  rb, imm8
+MOV  rb, 'A'        # char literal immediate
+MOV  rb, rb
+</code></pre>
+<p><code>ip</code> is not a valid MOV operand. Use <code>TKR ip, rw</code> to set the user instruction pointer from
+kernel mode.</p>
+<p>To move a narrower view into a wider register use <code>ZEXT</code> or <code>SEXT</code> first.</p>
+<h2 id="push"><a class="header" href="#push">PUSH</a></h2>
+<p>Decrements SP then writes the value to the stack. Width is determined by the register view.</p>
+<pre><code>PUSH rw     # SP -= 4, writes 32-bit value
+PUSH rh     # SP -= 2, writes 16-bit value
+PUSH rb     # SP -= 1, writes byte
+</code></pre>
+<h2 id="pop"><a class="header" href="#pop">POP</a></h2>
+<p>Reads from the stack then increments SP. Writing a narrower view leaves upper bits of the
+register untouched.</p>
+<pre><code>POP  rw     # reads 32-bit value, SP += 4
+POP  rh     # reads 16-bit value into low 16, SP += 2
+POP  rb     # reads byte into low 8, SP += 1
+</code></pre>
+<h2 id="zext"><a class="header" href="#zext">ZEXT</a></h2>
+<p>Zero-extends a narrower view into a wider register. Bits above the source width are set to
+zero. Source and destination can be different registers.</p>
+<pre><code>ZEXT rw, rh     # zero-extend 16-bit into 32-bit
+ZEXT rw, rb     # zero-extend 8-bit into 32-bit
+ZEXT rh, rb     # zero-extend 8-bit into 16-bit
+</code></pre>
+<h2 id="sext"><a class="header" href="#sext">SEXT</a></h2>
+<p>Sign-extends a narrower view into a wider register. The high bit of the source is replicated
+into all bits above it in the destination. Source and destination can be different registers.</p>
+<pre><code>SEXT rw, rh     # sign-extend 16-bit into 32-bit
+SEXT rw, rb     # sign-extend 8-bit into 32-bit
+SEXT rh, rb     # sign-extend 8-bit into 16-bit
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="arithmetic-1"><a class="header" href="#arithmetic-1">Arithmetic</a></h1>
+<h2 id="add"><a class="header" href="#add">ADD</a></h2>
+<p>Adds source to destination, result in destination. Source can be a register or immediate.</p>
+<p>Flags: C set on unsigned overflow, N set if high bit of result is set.</p>
+<pre><code>ADD rw, rw
+ADD rw, imm32
+ADD rh, rh
+ADD rh, imm16
+ADD rb, rb
+ADD rb, imm8
+</code></pre>
+<h2 id="sub"><a class="header" href="#sub">SUB</a></h2>
+<p>Subtracts source from destination, result in destination. Source can be a register or
+immediate.</p>
+<p>Flags: C set on unsigned underflow (borrow), N set if high bit of result is set.</p>
+<pre><code>SUB rw, rw
+SUB rw, imm32
+SUB rh, rh
+SUB rh, imm16
+SUB rb, rb
+SUB rb, imm8
+</code></pre>
+<h2 id="cmp"><a class="header" href="#cmp">CMP</a></h2>
+<p>Computes <code>dst - src</code> and sets flags, discards the result. Source can be a register or
+immediate. Use before conditional jumps.</p>
+<p>Flags: Z set if equal, C set if src &gt; dst (unsigned), N set if high bit of result is set.</p>
+<pre><code>CMP rw, rw
+CMP rw, imm32
+CMP rh, rh
+CMP rh, imm16
+CMP rb, rb
+CMP rb, imm8
+</code></pre>
+<h2 id="mul"><a class="header" href="#mul">MUL</a></h2>
+<p>Multiplies source by destination as unsigned integers, result in destination. Source can be a register or immediate.</p>
+<p>Flags: C set on unsigned overflow, O set on overflow, N set if high bit of result is set.</p>
+<pre><code>MUL rw, rw
+MUL rw, imm32
+MUL rh, rh
+MUL rh, imm16
+MUL rb, rb
+MUL rb, imm8
+</code></pre>
+<h2 id="smul"><a class="header" href="#smul">SMUL</a></h2>
+<p>Multiplies source by destination as signed integers, result in destination. Source can be a register or immediate.</p>
+<p>Flags: C set on overflow, O set if signed overflow occurred, N set if high bit of result is set.</p>
+<pre><code>SMUL rw, rw
+SMUL rw, imm32
+SMUL rh, rh
+SMUL rh, imm16
+SMUL rb, rb
+SMUL rb, imm8
+</code></pre>
+<h2 id="div"><a class="header" href="#div">DIV</a></h2>
+<p>Divides destination by source as unsigned integers, result in destination. Source can be a register or immediate.
+Raises a fault if source is zero.</p>
+<p>Flags: N set if high bit of result is set.</p>
+<pre><code>DIV rw, rw
+DIV rw, imm32
+DIV rh, rh
+DIV rh, imm16
+DIV rb, rb
+DIV rb, imm8
+</code></pre>
+<h2 id="sdiv"><a class="header" href="#sdiv">SDIV</a></h2>
+<p>Divides destination by source as signed integers, result in destination. Source can be a register or immediate.
+Raises a fault if source is zero.</p>
+<p>Flags: N set if high bit of result is set.</p>
+<pre><code>SDIV rw, rw
+SDIV rw, imm32
+SDIV rh, rh
+SDIV rh, imm16
+SDIV rb, rb
+SDIV rb, imm8
+</code></pre>
+<h2 id="mod"><a class="header" href="#mod">MOD</a></h2>
+<p>Computes the remainder of destination divided by source as unsigned integers, result in destination.
+Source can be a register or immediate. Raises a fault if source is zero.</p>
+<p>Flags: N set if high bit of result is set.</p>
+<pre><code>MOD rw, rw
+MOD rw, imm32
+MOD rh, rh
+MOD rh, imm16
+MOD rb, rb
+MOD rb, imm8
+</code></pre>
+<h2 id="smod"><a class="header" href="#smod">SMOD</a></h2>
+<p>Computes the remainder of destination divided by source as signed integers, result in destination.
+Source can be a register or immediate. Raises a fault if source is zero.</p>
+<p>Flags: N set if high bit of result is set.</p>
+<pre><code>SMOD rw, rw
+SMOD rw, imm32
+SMOD rh, rh
+SMOD rh, imm16
+SMOD rb, rb
+SMOD rb, imm8
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="bitwise-1"><a class="header" href="#bitwise-1">Bitwise</a></h1>
+<h2 id="and"><a class="header" href="#and">AND</a></h2>
+<p>Bitwise AND, result in destination. Source can be a register or immediate. Flags: N.</p>
+<pre><code>AND rw, rw
+AND rw, imm32
+AND rh, rh
+AND rh, imm16
+AND rb, rb
+AND rb, imm8
+</code></pre>
+<h2 id="or"><a class="header" href="#or">OR</a></h2>
+<p>Bitwise OR, result in destination. Source can be a register or immediate. Flags: N.</p>
+<pre><code>OR  rw, rw
+OR  rw, imm32
+OR  rh, rh
+OR  rh, imm16
+OR  rb, rb
+OR  rb, imm8
+</code></pre>
+<h2 id="xor"><a class="header" href="#xor">XOR</a></h2>
+<p>Bitwise XOR, result in destination. Source can be a register or immediate. Flags: N.
+<code>XOR rw, rw</code> is the canonical way to zero a register.</p>
+<pre><code>XOR rw, rw
+XOR rw, imm32
+XOR rh, rh
+XOR rh, imm16
+XOR rb, rb
+XOR rb, imm8
+</code></pre>
+<h2 id="not"><a class="header" href="#not">NOT</a></h2>
+<p>Bitwise NOT in place. Flags: N.</p>
+<pre><code>NOT rw
+NOT rh
+NOT rb
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="shifts-and-rotations-1"><a class="header" href="#shifts-and-rotations-1">Shifts and rotations</a></h1>
+<p>The shift amount <code>n</code> is always either an <code>rb</code> register or an <code>imm8</code>. The destination width is
+determined by the register view used.</p>
+<h2 id="shl"><a class="header" href="#shl">SHL</a></h2>
+<p>Shifts destination left by <code>n</code> bits. Zeros fill from the right. If <code>n</code> &gt;= width of the
+destination view, the result is zero.</p>
+<p>Flags: Z set if result is zero, N set if high bit of result is set, C set to the last bit
+shifted out of the top.</p>
+<pre><code>SHL rw, rb
+SHL rw, imm8
+SHL rh, rb
+SHL rh, imm8
+SHL rb, rb
+SHL rb, imm8
+</code></pre>
+<h2 id="shr"><a class="header" href="#shr">SHR</a></h2>
+<p>Shifts destination right by <code>n</code> bits logically. Zeros fill from the left. If <code>n</code> &gt;= width of
+the destination view, the result is zero.</p>
+<p>Flags: Z set if result is zero, N set if high bit of result is set, C set to the last bit
+shifted out of the bottom.</p>
+<pre><code>SHR rw, rb
+SHR rw, imm8
+SHR rh, rb
+SHR rh, imm8
+SHR rb, rb
+SHR rb, imm8
+</code></pre>
+<h2 id="sar"><a class="header" href="#sar">SAR</a></h2>
+<p>Shifts destination right by <code>n</code> bits arithmetically. The sign bit is replicated into vacated
+bits from the left. If <code>n</code> &gt;= width of the destination view, the result is all sign bits
+(<code>0x00</code> or <code>0xFF</code> / <code>0xFFFF</code> / <code>0xFFFFFFFF</code>).</p>
+<p>Flags: Z set if result is zero, N set if high bit of result is set, C set to the last bit
+shifted out of the bottom.</p>
+<pre><code>SAR rw, rb
+SAR rw, imm8
+SAR rh, rb
+SAR rh, imm8
+SAR rb, rb
+SAR rb, imm8
+</code></pre>
+<h2 id="rol"><a class="header" href="#rol">ROL</a></h2>
+<p>Rotates destination left by <code>n</code> bits. Bits shifted out of the top wrap into the bottom.</p>
+<p>Flags: Z set if result is zero, N set if high bit of result is set, C unaffected.</p>
+<pre><code>ROL rw, rb
+ROL rw, imm8
+ROL rh, rb
+ROL rh, imm8
+ROL rb, rb
+ROL rb, imm8
+</code></pre>
+<h2 id="ror"><a class="header" href="#ror">ROR</a></h2>
+<p>Rotates destination right by <code>n</code> bits. Bits shifted out of the bottom wrap into the top.</p>
+<p>Flags: Z set if result is zero, N set if high bit of result is set, C unaffected.</p>
+<pre><code>ROR rw, rb
+ROR rw, imm8
+ROR rh, rb
+ROR rh, imm8
+ROR rb, rb
+ROR rb, imm8
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="control-flow-1"><a class="header" href="#control-flow-1">Control flow</a></h1>
+<h2 id="jmp"><a class="header" href="#jmp">JMP</a></h2>
+<p>Unconditional jump. Register form enables indirect jumps and must use an <code>rw</code> register.</p>
+<pre><code>JMP label       # opcode + addr32
+JMP rw          # opcode + enc  (indirect)
+JMP 0x12345678  # opcode + addr32 literal
+</code></pre>
+<h2 id="jz"><a class="header" href="#jz">JZ</a></h2>
+<p>Jump if zero flag is set (last result was zero, or operands were equal).</p>
+<pre><code>JZ  label
+JZ  rw
+</code></pre>
+<h2 id="jnz"><a class="header" href="#jnz">JNZ</a></h2>
+<p>Jump if zero flag is clear.</p>
+<pre><code>JNZ label
+JNZ rw
+</code></pre>
+<h2 id="jc"><a class="header" href="#jc">JC</a></h2>
+<p>Jump if carry flag is set (unsigned overflow or borrow).</p>
+<pre><code>JC  label
+JC  rw
+</code></pre>
+<h2 id="jn"><a class="header" href="#jn">JN</a></h2>
+<p>Jump if negative flag is set (high bit of last result was 1).</p>
+<pre><code>JN  label
+JN  rw
+</code></pre>
+<h2 id="jo"><a class="header" href="#jo">JO</a></h2>
+<p>Jump if overflow flag is set (signed arithmetic overflow occurred).</p>
+<pre><code>JO  label
+JO  rw
+</code></pre>
+<h2 id="jno"><a class="header" href="#jno">JNO</a></h2>
+<p>Jump if overflow flag is clear (no signed arithmetic overflow).</p>
+<pre><code>JNO label
+JNO rw
+</code></pre>
+<h2 id="call"><a class="header" href="#call">CALL</a></h2>
+<p>Pushes the return address onto the stack then jumps. The return address is <code>IP + 5</code> for the
+immediate form and <code>IP + 2</code> for the register form.</p>
+<pre><code>CALL label      # opcode + addr32
+CALL rw         # opcode + enc  (indirect)
+</code></pre>
+<h2 id="ret"><a class="header" href="#ret">RET</a></h2>
+<p>Pops a 32-bit address off the stack and jumps to it. Paired with <code>CALL</code>.</p>
+<pre><code>RET
+</code></pre>
+<h2 id="nop"><a class="header" href="#nop">NOP</a></h2>
+<p>Does nothing, advances IP by one byte.</p>
+<pre><code>NOP
+</code></pre>
+<h2 id="halt"><a class="header" href="#halt">HALT</a></h2>
+<p>Stops execution.</p>
+<pre><code>HALT
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="io-1"><a class="header" href="#io-1">I/O</a></h1>
+<p>Width of the transfer is determined by the register view used.</p>
+<h2 id="in"><a class="header" href="#in">IN</a></h2>
+<p>Reads from an I/O port into a register.</p>
+<pre><code>IN rw, port
+IN rh, port
+IN rb, port
+</code></pre>
+<h2 id="out"><a class="header" href="#out">OUT</a></h2>
+<p>Writes a register value to an I/O port.</p>
+<pre><code>OUT port, rw
+OUT port, rh
+OUT port, rb
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="memory-1"><a class="header" href="#memory-1">Memory</a></h1>
+<h2 id="load"><a class="header" href="#load">LOAD</a></h2>
+<p>Loads a value from the address held in <code>addr</code> into <code>dst</code>. Width is determined by <code>dst</code>. <code>addr</code>
+must be an <code>rw</code> register since addresses are 32-bit.</p>
+<pre><code>LOAD rw, rw     # load 32-bit value at address in src
+LOAD rh, rw     # load 16-bit value at address in src into low 16
+LOAD rb, rw     # load byte at address in src into low 8
+</code></pre>
+<p>Encoding: <code>op dst_enc addr_enc</code> (3 bytes).</p>
+<h2 id="store"><a class="header" href="#store">STORE</a></h2>
+<p>Stores a value from <code>src</code> to the address held in <code>addr</code>. Width is determined by <code>src</code>. <code>addr</code>
+must be an <code>rw</code> register since addresses are 32-bit.</p>
+<pre><code>STORE rw, rw    # store 32-bit value to address in addr
+STORE rw, rh    # store low 16 of src to address in addr
+STORE rw, rb    # store low 8 of src to address in addr
+</code></pre>
+<p>Encoding: <code>op addr_enc src_enc</code> (3 bytes).</p>
+<h2 id="mmap"><a class="header" href="#mmap">MMAP</a></h2>
+<p>Maps a range of physical pages into the context held in <code>mr</code>. Privileged.</p>
+<pre><code>MMAP rw, rw, rw     # virt_page, phys_page, page_count (all rw)
+MMAP rw, rw, imm32  # page_count as immediate
+</code></pre>
+<ul>
+<li>All operands are page numbers or page counts, not byte addresses. Multiply by 4096 to get
+the corresponding byte address.</li>
+<li><code>virt_page</code> and <code>phys_page</code> must be <code>rw</code> registers.</li>
+<li><code>page_count</code> may be an <code>rw</code> register or an <code>imm32</code>.</li>
+<li>Each covered page is mapped independently. Overlapping an existing mapping replaces it.</li>
+<li>The target context is <code>mr</code>, not <code>cr</code>. Set <code>mr</code> before calling <code>MMAP</code> when mapping into a
+context other than the current one.</li>
+</ul>
+<h2 id="munmap"><a class="header" href="#munmap">MUNMAP</a></h2>
+<p>Unmaps a range of pages from the context held in <code>mr</code>. Privileged.</p>
+<pre><code>MUNMAP rw, rw       # virt_page, page_count (both rw)
+MUNMAP rw, imm32    # page_count as immediate
+</code></pre>
+<ul>
+<li><code>virt_page</code> must be an <code>rw</code> register.</li>
+<li><code>page_count</code> may be an <code>rw</code> register or an <code>imm32</code>.</li>
+<li>Unmapping a page that is not mapped raises interrupt 1.</li>
+<li>The target context is <code>mr</code>, not <code>cr</code>.</li>
+</ul>
+<h2 id="mprotect"><a class="header" href="#mprotect">MPROTECT</a></h2>
+<p>Sets the permission bits on a range of pages in the context held in <code>mr</code>. Privileged.</p>
+<pre><code>MPROTECT rw, rw, rb     # virt_page, page_count, permission bits
+MPROTECT rw, imm32, rb  # page_count as immediate
+</code></pre>
+<ul>
+<li>The target context is <code>mr</code>, not <code>cr</code>.</li>
+</ul>
+<p>Permission bits: bit 0 = Read, bit 1 = Write, bit 2 = Execute.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="system-1"><a class="header" href="#system-1">System</a></h1>
+<p>All instructions on this page are privileged unless noted. Executing them in user mode raises
+interrupt 6.</p>
+<h2 id="sie"><a class="header" href="#sie">SIE</a></h2>
+<p>Sets one entry in the interrupt vector table. The first operand is an <code>rb</code> register holding
+the vector index. The second operand is the handler address, either as a label, immediate, or
+<code>rw</code> register.</p>
+<pre><code>SIE rb, label
+SIE rb, 0x12345678
+SIE rb, rw
+</code></pre>
+<ul>
+<li>Index must be <code>0..255</code>.</li>
+<li>Address <code>0</code> clears the handler.</li>
+</ul>
+<h2 id="int"><a class="header" href="#int">INT</a></h2>
+<p>Raises a software interrupt. Not privileged; available in user mode.</p>
+<pre><code>INT 15          # immediate form, u8 literal
+INT rb          # register form
+</code></pre>
+<p>The immediate form encodes a <code>u8</code> vector index directly. The register form reads an <code>rb</code>
+register; using a wider view is an invalid opcode. Index 15 is the conventional syscall slot.</p>
+<h2 id="iret"><a class="header" href="#iret">IRET</a></h2>
+<p>Returns from an interrupt handler. Unwinds one interrupt frame from the kernel stack,
+restoring the general-purpose registers, <code>ip</code>, <code>flags</code>, and the active register file to
+whatever they were before the interrupt was raised.</p>
+<pre><code>IRET
+</code></pre>
+<h2 id="dpl"><a class="header" href="#dpl">DPL</a></h2>
+<p>Activates the user register file. One-way: the only path back to kernel mode is through an
+interrupt. The kernel is responsible for setting up the user file completely before calling
+<code>DPL</code>, including <code>sp</code> and <code>ip</code> via <code>TKR</code>.</p>
+<pre><code>DPL
+</code></pre>
+<h2 id="tur"><a class="header" href="#tur">TUR</a></h2>
+<p>Transfers a value from a user register into a kernel register without switching mode. Both
+operands must be <code>rw</code>. <code>ip</code> and <code>cr</code> are valid as sources to read the user instruction pointer
+and address space context.</p>
+<pre><code>TUR rw_dst, rw_src   # kern_file[dst] = user_file[src]
+TUR rw_dst, ip       # kern_file[dst] = user_file.ip
+TUR rw_dst, cr       # kern_file[dst] = user_file.cr
+</code></pre>
+<p>Reading from an uninitialised user file returns zero.</p>
+<h2 id="tkr"><a class="header" href="#tkr">TKR</a></h2>
+<p>Transfers a value from a kernel register into a user register without switching mode. Both
+operands must be <code>rw</code>. <code>ip</code> and <code>cr</code> are valid as destinations to set the user entry point and
+address space before <code>DPL</code>.</p>
+<pre><code>TKR rw_dst, rw_src   # user_file[dst] = kern_file[src]
+TKR ip, rw_src       # user_file.ip   = kern_file[src]
+TKR cr, rw_src       # user_file.cr   = kern_file[src]
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="overview"><a class="header" href="#overview">Overview</a></h1>
+<p>The FVM is a simple 32-bit virtual machine. One opcode is one byte, one
+register operand is one byte; wasteful but keeps everything easy to reason
+about.</p>
+<p>The machine has two privilege levels: kernel and user. Only one is active at a
+time. The only way into the kernel is through an interrupt. The only way out is
+<code>DPL</code>.</p>
+<h2 id="execution-loop"><a class="header" href="#execution-loop">Execution loop</a></h2>
+<p><code>step</code> performs fetch, decode, and execute for one instruction using the active
+register file.</p>
+<p>IP advancement: control-flow instructions update <code>ip</code> themselves. All other
+instructions have <code>ip</code> incremented by <code>instruction.size</code> after execute returns.</p>
+<p>Faults raised during <code>step</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Cause</th><th>Interrupt</th></tr>
+</thead>
+<tbody>
+<tr><td>bus fault on fetch, read, or write</td><td>1</td></tr>
+<tr><td>unrecognised opcode byte</td><td>2</td></tr>
+<tr><td>privileged instruction in user mode</td><td>6</td></tr>
+</tbody>
+</table>
+</div>
+<p>If the IVT entry for the raised interrupt is <code>0</code> the VM halts immediately.
+Otherwise the handler runs in the kernel file and returns via <code>IRET</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="registers-1"><a class="header" href="#registers-1">Registers</a></h1>
+<p>The VM maintains two complete register files: one for kernel mode and one for
+user mode. Only one file is active at a time. All instructions read and write
+the active file. The inactive file is preserved untouched until the mode
+switches.</p>
+<p>Each file contains:</p>
+<ul>
+<li>16 general-purpose 32-bit registers with three views sharing the same storage:
+<ul>
+<li><code>rw0</code>..<code>rw15</code>: full 32-bit view</li>
+<li><code>rh0</code>..<code>rh15</code>: low 16 bits of the corresponding <code>rw</code> register</li>
+<li><code>rb0</code>..<code>rb15</code>: low 8 bits of the corresponding <code>rh</code> register</li>
+</ul>
+</li>
+<li><code>sp</code>: stack pointer, 32-bit, separate from the general-purpose file</li>
+<li><code>ip</code>: instruction pointer, 32-bit, not directly writable by general instructions</li>
+<li><code>cr</code>: address space context identifier, 32-bit</li>
+<li><code>flags</code>: Z, C, N flag bits</li>
+</ul>
+<p><code>cr</code> switches with the file on a mode change. When <code>DPL</code> activates the user
+file, the bus immediately begins translating through the user file’s <code>cr</code>. This
+means the kernel sets the user CR via <code>TKR cr, rw</code> before <code>DPL</code> without ever
+changing its own CR. Writing <code>cr</code> directly in user mode raises interrupt 6; the
+user file’s <code>cr</code> is only writable by the kernel via <code>TKR</code>.</p>
+<p><code>mr</code> (mapping register) is a single privileged 32-bit register not part of
+either file. It holds the target context for <code>MMAP</code>, <code>MUNMAP</code>, and <code>MPROTECT</code>.
+Readable and writable only from kernel mode. Initialized to 0 on VM start.</p>
+<p>Writing a narrower view of a general-purpose register never touches bits outside
+that view. Use <code>ZEXT</code> or <code>SEXT</code> to promote a value into a wider view.</p>
+<p>The internal layout:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>struct RegisterFile {
+    regs:  [u32; 16],
+    ip:    u32,
+    sp:    u32,
+    cr:    u32,
+    flags: Flags,
+}
+
+files:             [RegisterFile; 2],  // 0 = kernel, 1 = user
+active:            usize,              // index into files
+mr:                u32,
+<span class="boring">}</span></code></pre>
+<p><code>files[0]</code> is the kernel file. <code>files[1]</code> is the user file. <code>active</code> is the
+only thing that changes on a mode switch.</p>
+<h2 id="register-encoding"><a class="header" href="#register-encoding">Register encoding</a></h2>
+<p>Each operand is one byte:</p>
+<pre><code>bits 7:5  view
+            001 = rw  (32-bit general purpose)
+            010 = rh  (low 16-bit view)
+            011 = rb  (low 8-bit view)
+            100 = sp  (stack pointer, from active file)
+            101 = cr  (context register, write is privileged)
+            110 = ip  (instruction pointer, privileged via TKR/TUR only)
+            111 = mr  (mapping register, privileged)
+bit  4    reserved
+bits 3:0  register index 0-15 (ignored for sp, cr, ip, and mr)
+</code></pre>
+<p>Examples: <code>rw5 = 0x25</code>, <code>rh5 = 0x45</code>, <code>rb5 = 0x65</code>, <code>sp = 0x80</code>, <code>cr = 0xA0</code>,
+<code>ip = 0xC0</code>, <code>mr = 0xE0</code>.</p>
+<h2 id="flags"><a class="header" href="#flags">Flags</a></h2>
+<p>Three flag bits updated by arithmetic and comparison instructions:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Name</th><th>Set when</th></tr>
+</thead>
+<tbody>
+<tr><td>Z</td><td>zero</td><td>result == 0</td></tr>
+<tr><td>C</td><td>carry</td><td>unsigned overflow (ADD) or borrow (SUB/CMP)</td></tr>
+<tr><td>N</td><td>negative</td><td>high bit of result is set</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="memory-and-the-bus"><a class="header" href="#memory-and-the-bus">Memory and the bus</a></h1>
+<p>32-bit address space. All memory access goes through the bus. There is no flat
+backing array; the bus owns a list of physical regions each backed by either a
+RAM device or a memory-mapped device. Unmapped virtual addresses always fault.</p>
+<h2 id="physical-layout"><a class="header" href="#physical-layout">Physical layout</a></h2>
+<p>At VM startup the host assembles a contiguous physical address space from the
+enabled devices. RAM is placed first at physical address <code>0x00000000</code>, then each
+additional device is placed immediately after the previous one. The result is a
+linear physical layout fixed at startup and never modified at runtime.</p>
+<p>RAM size is configured at startup. It is not required to be 4 GB or any fixed
+size.</p>
+<p>The first pages of RAM hold the loader info region, written once by the VM
+before the kernel runs and mapped read-only in context 0. It is the single
+source of truth for boot-time topology: what physical memory and port devices
+exist, and which pages the loader already consumed.</p>
+<h2 id="virtual-address-translation"><a class="header" href="#virtual-address-translation">Virtual address translation</a></h2>
+<p>The bus maintains a page table per context in host Rust memory, not accessible
+to guest code. Each entry covers one 4 kb page and records the backing device,
+the offset within that device, and the permissions for that mapping.</p>
+<p>On every access the bus computes <code>page = virt_addr &gt;&gt; 12</code>, looks up the entry
+for <code>(current_cr, page)</code>, checks permissions, then dispatches to the device at
+<code>device_offset = entry.device_page_base + (virt_addr &amp; 0xFFF)</code>.</p>
+<p><code>MMAP</code>, <code>MUNMAP</code>, and <code>MPROTECT</code> consult <code>mr</code> instead of <code>cr</code> when selecting
+the target context. All other memory accesses use <code>cr</code>.</p>
+<p>The address and count operands of <code>MMAP</code>, <code>MUNMAP</code>, and <code>MPROTECT</code> are page
+numbers and page counts, not byte addresses. The bus multiplies them by 4096
+internally. A page number of 1 refers to the page starting at byte address
+<code>0x1000</code>.</p>
+<h2 id="permissions"><a class="header" href="#permissions">Permissions</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Bit</th><th>Name</th><th>Effect</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td>Read</td><td>allows data reads</td></tr>
+<tr><td>1</td><td>Write</td><td>allows data writes</td></tr>
+<tr><td>2</td><td>Execute</td><td>allows instruction fetch</td></tr>
+</tbody>
+</table>
+</div>
+<p>Common combinations:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Bits</th><th>Used for</th></tr>
+</thead>
+<tbody>
+<tr><td>ROM</td><td><code>001</code></td><td><code>.rodata</code>, loader info</td></tr>
+<tr><td>Code</td><td><code>101</code></td><td><code>.code</code></td></tr>
+<tr><td>RAM</td><td><code>011</code></td><td><code>.data</code>, stack</td></tr>
+</tbody>
+</table>
+</div>
+<p>Violating any permission raises interrupt 1.</p>
+<h2 id="default-virtual-layout-in-context-0"><a class="header" href="#default-virtual-layout-in-context-0">Default virtual layout in context 0</a></h2>
+<p>The loader builds this layout at startup. All addresses are determined at load
+time; nothing is hardcoded. Each region starts at the next 4 kb boundary after
+the previous region. Sections with size 0 are skipped entirely.</p>
+<pre><code>page 0        loader info region   ROM   ceil(loader_info_size / 4096) pages
+next page     .rodata              ROM   ceil(rodata_size / 4096) pages
+next page     .code                Code  ceil(code_size / 4096) pages
+next page     .data                RAM   ceil(data_size / 4096) pages
+...           unmapped
+0xFFC00000 .. 0xFFFFFFFF           RAM   stack, mapped to last 4 MB of RAM
+</code></pre>
+<p>The stack region is always mapped regardless of RAM size. It maps the last 4 MB
+of physical RAM to the fixed virtual range <code>0xFFC00000..0xFFFFFFFF</code>. <code>sp</code> in
+the kernel file is initialized to <code>0xFFFFFFFF</code> on VM creation.</p>
+<p>If the end of <code>.data</code> would overlap <code>0xFFC00000</code> the loader returns an error.</p>
+<h2 id="loader-info-region"><a class="header" href="#loader-info-region">Loader info region</a></h2>
+<p>Starts at physical page 0 and is mapped read-only at virtual page 0 in context
+0. The loader writes it once before the kernel runs. Size is rounded up to the
+nearest page boundary after all fields are serialized.</p>
+<p>All multi-byte fields are big-endian. A <code>Vec</code> in the layout below means a
+4-byte count followed by that many entries.</p>
+<pre><code>enum KernelMappingKind : u8 {
+    LoaderInfo = 0,
+    Rodata     = 1,
+    Code       = 2,
+    Data       = 3,
+    Stack      = 4,
+}
+
+struct MemoryRegion {
+    id:         [u8; 8],   // 8-byte ASCII device id, unused bytes zero-padded
+    base_page:  u32,
+    page_count: u32,
+}
+
+struct PortDevice {
+    id:   [u8; 8],         // 8-byte ASCII device id, unused bytes zero-padded
+    port: u32,
+}
+
+struct KernelMapping {
+    kind:       KernelMappingKind,  // 1 byte
+    base_page:  u32,
+    page_count: u32,               // 0 if the section was empty and not mapped
+}
+
+struct LoaderInfo {
+    memory_regions:  Vec&lt;MemoryRegion&gt;,
+    port_devices:    Vec&lt;PortDevice&gt;,
+    kernel_mappings: Vec&lt;KernelMapping&gt;,
+}
+</code></pre>
+<p><code>memory_regions</code> lists every physical RAM and memory-mapped device region in
+physical address order. The kernel uses this to enumerate what backing memory
+exists.</p>
+<p><code>port_devices</code> lists every port-mapped device with its port number. There is no
+separate discovery mechanism for port devices; this is the only place the kernel
+learns about them.</p>
+<p><code>kernel_mappings</code> lists every page range the loader reserved, in layout order.
+The kernel reads this at startup and marks all listed pages as occupied before
+doing any allocation. Entries with <code>page_count = 0</code> were not loaded and hold no
+physical pages.</p>
+<h2 id="bus-device-trait"><a class="header" href="#bus-device-trait">Bus device trait</a></h2>
+<p>All backing storage including RAM implements <code>MemoryMappedDevice</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>trait MemoryMappedDevice {
+    fn id(&amp;self) -&gt; [u8; 8];
+    fn size(&amp;self) -&gt; u32;
+
+    fn read_byte(&amp;self, offset: u32) -&gt; VmResult&lt;u8&gt;;
+    fn read_half(&amp;self, offset: u32) -&gt; VmResult&lt;u16&gt;;
+    fn read_word(&amp;self, offset: u32) -&gt; VmResult&lt;u32&gt;;
+
+    fn write_byte(&amp;self, offset: u32, value: u8) -&gt; VmResult&lt;()&gt;;
+    fn write_half(&amp;self, offset: u32, value: u16) -&gt; VmResult&lt;()&gt;;
+    fn write_word(&amp;self, offset: u32, value: u32) -&gt; VmResult&lt;()&gt;;
+}
+<span class="boring">}</span></code></pre>
+<p>Multi-byte reads and writes are atomic at the device level. Devices with wide
+registers override the relevant methods. RAM provides default implementations
+that compose bytes in big-endian order.</p>
+<p><code>VmResult</code> may carry an <code>Interrupt</code> variant. A device raising an interrupt
+returns <code>Err(VmError::Interrupt(n))</code>. The bus propagates this to the execution
+loop which delivers it through the normal interrupt dispatch path.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="privilege-and-interrupts"><a class="header" href="#privilege-and-interrupts">Privilege and interrupts</a></h1>
+<p>The interrupt vector table is stored inside <code>Vm</code>, not in bus memory. <code>LOAD</code> and
+<code>STORE</code> cannot reach it.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>ivt:               [Address; 256],
+pending_interrupt: Option&lt;u8&gt;,
+<span class="boring">}</span></code></pre>
+<p><code>SIE</code>, <code>DPL</code>, <code>TUR</code>, <code>TKR</code>, <code>MMAP</code>, <code>MUNMAP</code>, <code>MPROTECT</code>, direct writes to
+<code>cr</code>, and writes to <code>mr</code> are privileged. Executing any of them when
+<code>active == 1</code> raises interrupt 6.</p>
+<h2 id="process-launch-sequence"><a class="header" href="#process-launch-sequence">Process launch sequence</a></h2>
+<p>The canonical sequence to launch a user process from the kernel:</p>
+<pre><code>MOV  mr, rw_pid        # target the new context
+MMAP ...               # map sections and stack for the new context
+MOV  mr, 0             # restore mapping target to kernel context
+TKR  sp, rw_stack_top  # set user sp
+TKR  ip, rw_entry      # set user ip
+TKR  cr, rw_pid        # set user cr; kernel cr unchanged
+DPL                    # activates user file, user cr takes effect immediately
+</code></pre>
+<p>After <code>DPL</code> the kernel is no longer running. The next path back is through an
+interrupt.</p>
+<h2 id="interrupt-vectors"><a class="header" href="#interrupt-vectors">Interrupt vectors</a></h2>
+<p>The IVT has 256 entries indexed by a <code>u8</code>.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Index</th><th>Name</th><th>Raised by</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td>reserved</td><td>reserved for future reset or shutdown flow</td></tr>
+<tr><td>1</td><td>bus fault</td><td>unmapped address, permission violation, or device fault</td></tr>
+<tr><td>2</td><td>invalid opcode</td><td>opcode byte outside the defined set</td></tr>
+<tr><td>3..5</td><td>reserved</td><td>-</td></tr>
+<tr><td>6</td><td>privilege fault</td><td>privileged operation attempted in user mode</td></tr>
+<tr><td>7..14</td><td>reserved</td><td>-</td></tr>
+<tr><td>15</td><td>software interrupt</td><td>conventional syscall slot</td></tr>
+<tr><td>16..255</td><td>unreserved</td><td>available for hardware device interrupts</td></tr>
+</tbody>
+</table>
+</div>
+<p>Reservation ranges within <code>16..255</code> for specific hardware device classes will be
+defined when device support is implemented.</p>
+<h2 id="interrupt-dispatch"><a class="header" href="#interrupt-dispatch">Interrupt dispatch</a></h2>
+<p><code>raise_interrupt(vm, index)</code> is the only entry point. It always switches to and
+runs in the kernel file.</p>
+<p>Dispatch sequence:</p>
+<ol>
+<li>If <code>pending_interrupt</code> is <code>Some(1)</code> and the incoming index is also <code>1</code>, this
+is a double fault: halt the VM immediately.</li>
+<li>Set <code>pending_interrupt = Some(index)</code>.</li>
+<li>Record whether the interrupted file was user (<code>came_from_user = active == 1</code>).</li>
+<li>Switch to the kernel file (<code>active = 0</code>).</li>
+<li>Push onto the kernel stack in this order:
+<ul>
+<li>the 16 general-purpose registers from the interrupted file, each as u32 (64 bytes)</li>
+<li>the interrupted <code>ip</code> as u32 (4 bytes)</li>
+<li>the interrupted <code>cr</code> as u32 (4 bytes)</li>
+<li>the interrupted <code>flags</code> as u8 (1 byte)</li>
+<li><code>came_from_user</code> as u8 (1 byte)</li>
+</ul>
+</li>
+<li>Look up <code>ivt[index]</code>. If the address is <code>0</code>, halt the VM.</li>
+<li>Set kernel <code>ip</code> to the handler address and clear <code>pending_interrupt</code>.</li>
+</ol>
+<p>The interrupted <code>ip</code> pushed in step 5 is chosen by the caller before
+<code>raise_interrupt</code> runs:</p>
+<ul>
+<li>fetch-time faults push <code>ip + 1</code></li>
+<li>execute-time faults push <code>ip + instruction.size</code></li>
+<li><code>INT</code> pushes the address of the instruction following <code>INT</code></li>
+</ul>
+<p>Total frame size pushed onto the kernel stack: 74 bytes.</p>
+<h2 id="iret-1"><a class="header" href="#iret-1">IRET</a></h2>
+<p><code>IRET</code> unwinds exactly one interrupt frame from the kernel stack:</p>
+<ol>
+<li>Pop <code>came_from_user</code> (1 byte), <code>flags</code> (1 byte), <code>cr</code> (4 bytes), <code>ip</code>
+(4 bytes), and the 16 general-purpose registers (64 bytes) from kernel <code>sp</code>
+in reverse push order.</li>
+<li>If <code>came_from_user == 1</code>, restore the popped state into the user file and set
+<code>active = 1</code>. Otherwise restore into the kernel file and stay in kernel mode.</li>
+</ol>
+<p><code>IRET</code> with nothing on the kernel stack raises interrupt 6.</p>
+<h2 id="double-fault"><a class="header" href="#double-fault">Double fault</a></h2>
+<p>If a bus fault (interrupt 1) arrives while <code>pending_interrupt</code> is already
+<code>Some(1)</code> the VM halts immediately with no further interrupt delivery. This
+condition indicates the kernel stack has overflowed or the interrupt handler
+itself is faulting.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="loader"><a class="header" href="#loader">Loader</a></h1>
+<p>The loader runs once at startup and sets up context 0 before the kernel starts.</p>
+<p>Steps:</p>
+<ol>
+<li>Serialise the loader info region into the first pages of RAM and map them
+read-only in context 0.</li>
+<li>Compute the virtual base address for each non-empty section by starting after
+the loader info region and advancing by <code>ceil(section_size / 4096) * 4096</code>
+for each section in order.</li>
+<li>Walk the relocation table. Each entry <code>(section: u8, offset: u32)</code> identifies
+a 4-byte slot within that section. Patch the slot by replacing the
+assembler-assumed address with the actual loaded address:
+<code>patched = actual_base[section] + (slot_value - assumed_base[section])</code>.</li>
+<li>Map each non-empty section into context 0 with the correct permissions.</li>
+<li>Map the stack: last 4 MB of physical RAM to <code>0xFFC00000..0xFFFFFFFF</code> with
+RAM permissions.</li>
+<li>Set kernel <code>ip</code> to the patched entry point address.</li>
+</ol>
+<p>Section indices used in relocation entries:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Value</th><th>Section</th></tr>
+</thead>
+<tbody>
+<tr><td>0</td><td><code>.rodata</code></td></tr>
+<tr><td>1</td><td><code>.code</code></td></tr>
+<tr><td>2</td><td><code>.data</code></td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="binary-format"><a class="header" href="#binary-format">Binary format</a></h1>
+<p>Version 3. Big-endian throughout. All length and count fields are 4 bytes.</p>
+<pre><code>offset      size  description
+----------  ----  -----------
+0           4     magic: 0x46 0x56 0x4D 0x21  ("FVM!")
+4           1     version: 3
+5           4     entry point address
+9           4     .rodata byte count  (N)
+13          4     .code byte count    (M)
+17          4     .data byte count    (P)
+21          4     relocation count    (K)
+25          N     .rodata bytes
+25+N        M     .code bytes
+25+N+M      P     .data bytes
+25+N+M+P    5*K   relocations: (section: u8, offset: u32) each, big-endian
+</code></pre>
+<p>Header before section data is 25 bytes.</p>
+<p>Relocations identify 32-bit address slots that must be patched by the loader
+when mapping sections to their actual virtual base addresses. Each relocation
+names the section the slot belongs to and its byte offset within that section.</p>
+<h2 id="privileged-instruction-encodings"><a class="header" href="#privileged-instruction-encodings">Privileged instruction encodings</a></h2>
+<p>For reference when writing or verifying kernel code.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mnemonic</th><th>Encoding</th></tr>
+</thead>
+<tbody>
+<tr><td><code>SIE rb, label</code></td><td><code>op rb_enc imm32[4]</code></td></tr>
+<tr><td><code>SIE rb, rw</code></td><td><code>op rb_enc rw_enc</code></td></tr>
+<tr><td><code>INT imm8</code></td><td><code>op imm8</code></td></tr>
+<tr><td><code>INT rb</code></td><td><code>op rb_enc</code></td></tr>
+<tr><td><code>IRET</code></td><td><code>op</code></td></tr>
+<tr><td><code>DPL</code></td><td><code>op</code></td></tr>
+<tr><td><code>TUR rw, rw|ip|cr</code></td><td><code>op rw_enc rw_enc</code></td></tr>
+<tr><td><code>TKR rw|ip|cr, rw</code></td><td><code>op rw_enc rw_enc</code></td></tr>
+<tr><td><code>MMAP rw, rw, rw|imm32</code></td><td><code>op rw_enc rw_enc rw_enc|imm32</code></td></tr>
+<tr><td><code>MUNMAP rw, rw|imm32</code></td><td><code>op rw_enc rw_enc|imm32</code></td></tr>
+<tr><td><code>MPROTECT rw, rw|imm32, rb</code></td><td><code>op rw_enc rw_enc|imm32 rb_enc</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Rules that are not obvious from the encoding:</p>
+<ul>
+<li><code>SIE</code>, <code>DPL</code>, <code>TUR</code>, <code>TKR</code>, <code>MMAP</code>, <code>MUNMAP</code>, <code>MPROTECT</code>, writes to <code>cr</code>,
+and writes to <code>mr</code> are privileged. Executing any of them in user mode raises
+interrupt 6.</li>
+<li><code>IRET</code> with nothing on the kernel stack raises interrupt 6.</li>
+<li><code>INT</code> immediate form accepts a <code>u8</code> literal. Register form requires <code>rb</code>.
+Using a wider register view with <code>INT</code> is an invalid opcode.</li>
+<li><code>TUR</code> and <code>TKR</code> general-purpose operands must be <code>rw</code>. <code>ip</code> and <code>cr</code> are
+additionally valid as the source of <code>TUR</code> and the destination of <code>TKR</code>.</li>
+<li><code>MMAP</code>, <code>MUNMAP</code>, and <code>MPROTECT</code> address operands are page numbers, not byte
+addresses. The size operand is a page count and also accepts <code>imm32</code>.</li>
+<li><code>MPROTECT</code> permission operand must be <code>rb</code>.</li>
+<li><code>MMAP</code>, <code>MUNMAP</code>, and <code>MPROTECT</code> target the context in <code>mr</code>, not <code>cr</code>.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>

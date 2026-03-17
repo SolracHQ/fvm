@@ -1,0 +1,12 @@
+# Error example: missing include file.
+#
+# Run with:
+#   just asm-example include_errors/error_missing_include
+#
+# Expected: the preprocessor reports that the included file cannot be resolved.
+
+#include "does_not_exist.fa"
+
+.code
+main:
+    HALT

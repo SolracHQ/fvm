@@ -2,20 +2,22 @@
 
 #[cfg(test)]
 mod tests {
-    use fvm_assembler::assembler::lexer::{Lexer, TokenKind};
+    use fvm_assembler::assembler::lexer::{tokenize, Token, TokenKind};
+
+    fn tokenize_source(source: &str) -> Vec<Token> {
+        tokenize(source, 0).unwrap()
+    }
 
     #[test]
     fn test_tokenize_empty_string() {
-        let mut lexer = Lexer::new("");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("");
         assert_eq!(tokens.len(), 1);
         assert!(matches!(tokens[0].kind, TokenKind::Eof));
     }
 
     #[test]
     fn test_tokenize_single_ident() {
-        let mut lexer = Lexer::new("NOP");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("NOP");
         assert_eq!(tokens.len(), 2);
         match &tokens[0].kind {
             TokenKind::Ident(s) => assert_eq!(s, "NOP"),
@@ -25,8 +27,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_number() {
-        let mut lexer = Lexer::new("42");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("42");
         assert_eq!(tokens.len(), 2);
         match tokens[0].kind {
             TokenKind::Number(n) => assert_eq!(n, 42),
@@ -36,8 +37,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_hex_number() {
-        let mut lexer = Lexer::new("0xFF00");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("0xFF00");
         assert_eq!(tokens.len(), 2);
         match tokens[0].kind {
             TokenKind::Number(n) => assert_eq!(n, 0xFF00),
@@ -47,8 +47,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_string() {
-        let mut lexer = Lexer::new("\"Hello\"");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("\"Hello\"");
         assert_eq!(tokens.len(), 2);
         match &tokens[0].kind {
             TokenKind::String(bytes) => {
@@ -60,8 +59,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_char() {
-        let mut lexer = Lexer::new("'A'");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("'A'");
         assert_eq!(tokens.len(), 2);
         match tokens[0].kind {
             TokenKind::Char(c) => assert_eq!(c, b'A'),
@@ -71,39 +69,34 @@ mod tests {
 
     #[test]
     fn test_tokenize_dot() {
-        let mut lexer = Lexer::new(".");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source(".");
         assert_eq!(tokens.len(), 2);
         assert!(matches!(tokens[0].kind, TokenKind::Dot));
     }
 
     #[test]
     fn test_tokenize_colon() {
-        let mut lexer = Lexer::new(":");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source(":");
         assert_eq!(tokens.len(), 2);
         assert!(matches!(tokens[0].kind, TokenKind::Colon));
     }
 
     #[test]
     fn test_tokenize_comma() {
-        let mut lexer = Lexer::new(",");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source(",");
         assert_eq!(tokens.len(), 2);
         assert!(matches!(tokens[0].kind, TokenKind::Comma));
     }
 
     #[test]
     fn test_tokenize_newline() {
-        let mut lexer = Lexer::new("NOP\nHALT");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("NOP\nHALT");
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Newline)));
     }
 
     #[test]
     fn test_tokenize_comment_ignored() {
-        let mut lexer = Lexer::new("NOP # This is a comment");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("NOP # This is a comment");
         // Should only have NOP + EOF, comment is ignored
         assert_eq!(tokens.len(), 2);
         match &tokens[0].kind {
@@ -114,8 +107,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_section_directive() {
-        let mut lexer = Lexer::new(".code");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source(".code");
         assert!(matches!(tokens[0].kind, TokenKind::Dot));
         match &tokens[1].kind {
             TokenKind::Ident(s) => assert_eq!(s, "code"),
@@ -125,8 +117,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_register_rw() {
-        let mut lexer = Lexer::new("rw0");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("rw0");
         match &tokens[0].kind {
             TokenKind::Ident(s) => assert_eq!(s, "rw0"),
             _ => panic!("Expected register identifier"),
@@ -135,8 +126,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_register_rh() {
-        let mut lexer = Lexer::new("rh0");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("rh0");
         match &tokens[0].kind {
             TokenKind::Ident(s) => assert_eq!(s, "rh0"),
             _ => panic!("Expected register identifier"),
@@ -145,8 +135,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_register_rb() {
-        let mut lexer = Lexer::new("rb0");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("rb0");
         match &tokens[0].kind {
             TokenKind::Ident(s) => assert_eq!(s, "rb0"),
             _ => panic!("Expected register identifier"),
@@ -155,22 +144,23 @@ mod tests {
 
     #[test]
     fn test_tokenize_line_col_tracking() {
-        let mut lexer = Lexer::new("NOP\nHALT");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("NOP\nHALT");
         assert_eq!(tokens[0].line, 1);
         assert_eq!(tokens[0].col, 1);
+        assert_eq!(tokens[0].file, 0);
+        assert_eq!(tokens[0].span, 0..3);
         // After newline
         let halt_token = tokens
             .iter()
             .find(|t| matches!(&t.kind, TokenKind::Ident(s) if s == "HALT"))
             .unwrap();
         assert_eq!(halt_token.line, 2);
+        assert_eq!(halt_token.file, 0);
     }
 
     #[test]
     fn test_tokenize_complex_instruction() {
-        let mut lexer = Lexer::new("MOV rw0, 42");
-        let tokens = lexer.tokenize().unwrap();
+        let tokens = tokenize_source("MOV rw0, 42");
         assert_eq!(tokens.len(), 5); // MOV + ident + comma + number + EOF
         match &tokens[0].kind {
             TokenKind::Ident(s) => assert_eq!(s, "MOV"),
@@ -185,8 +175,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_invalid_char_literal() {
-        let mut lexer = Lexer::new("'ABC'");
-        let result = lexer.tokenize();
+        let result = tokenize("'ABC'", 0);
         assert!(result.is_err(), "Multi-char literal should be error");
     }
 }

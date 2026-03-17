@@ -1,0 +1,50 @@
+# Runnable include/preprocessor example.
+#
+# Assemble with:
+#   just asm-example include_example/main
+#
+# Run with raw output:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/include_example/main.fo", devices: [raw_io(port: 0)])'
+#
+# What this file demonstrates:
+# - #include with paths relative to the current file
+# - include guards by including constants.fa twice
+# - token-based macro substitution for PAGE_SIZE, DEFAULT_COUNT, and ACTIVE_GREETING
+# - #ifndef selecting the debug build path
+# - a runnable program that prints included strings without depending on helper calls
+
+#include "constants.fa"
+#include "constants.fa"
+#define ACTIVE_GREETING greeting_debug
+#include "greeting.fa"
+
+.code
+main:
+    MOV rb0, '!'
+#include "trace_block.fa"
+
+#ifndef RELEASE_BUILD
+    MOV rw1, trace_banner
+    .trace_loop:
+        LOAD rb2, rw1
+        CMP rb2, 0
+        JZ .trace_done
+        OUT 0, rb2
+        ADD rw1, 1
+        JMP .trace_loop
+    .trace_done:
+#endif
+
+    MOV rw1, ACTIVE_GREETING
+    .loop:
+        LOAD rb2, rw1
+        CMP rb2, 0
+        JZ .done
+        OUT 0, rb2
+        ADD rw1, 1
+        JMP .loop
+
+    MOV rw0, PAGE_SIZE
+    MOV rw2, DEFAULT_COUNT
+    .done:
+    HALT

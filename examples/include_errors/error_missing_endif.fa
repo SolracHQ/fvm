@@ -1,0 +1,13 @@
+# Error example: missing #endif.
+#
+# Run with:
+#   just asm-example include_errors/error_missing_endif
+#
+# Expected: the preprocessor reports an unclosed conditional directive.
+
+#define FEATURE
+#ifdef FEATURE
+
+.code
+main:
+    HALT

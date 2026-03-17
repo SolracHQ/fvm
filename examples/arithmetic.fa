@@ -1,39 +1,188 @@
 # Arithmetic and bitwise operations
 #
-# Demonstrates ADD, SUB, AND, OR, XOR, NOT, and CMP.
+# Demonstrates ADD, SUB, AND, OR, XOR, NOT, CMP, MUL, DIV, MOD, SMUL, SDIV, SMOD,
+# as well as jump conditions including JO (jump on overflow).
+# Uses raw_io (port 1) for all output (both text and decimal numbers).
 # Run with:
-#   just asm-exec '(mem_size: "16mb", rom: "target/examples/arithmetic.fo", devices: [])'
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/arithmetic.fo", devices: [raw_io(port: 1)])'
+
+# Define test constants
+#define ADD_A 12
+#define ADD_B 5
+#define SUB_A 100
+#define SUB_B 37
+#define MUL_A 12
+#define MUL_B 5
+#define DIV_A 100
+#define DIV_B 4
+#define MOD_A 17
+#define MOD_B 5
+#define SMUL_NEG -1
+#define SMUL_POS 7
+#define OVERFLOW_VAL 0x7FFFFFFF
+#define OVERFLOW_MUL 2
+
+.rodata
+msg_add:       db "12 + 5 = ", 0
+msg_sub:       db "100 - 37 = ", 0
+msg_mul:       db "12 * 5 = ", 0
+msg_div:       db "100 / 4 = ", 0
+msg_mod:       db "17 % 5 = ", 0
+msg_smul:      db "-1 * 7 = ", 0
+msg_overflow:  db "Overflow in SMUL: ", 0
+newline:       db "\n", 0
 
 .code
+
+# Helper function to print a string at address in rw0
+# LOAD reads based on target register width (rb = 1 byte, rh = 2 bytes, rw = 4 bytes)
+print_str:
+  .loop:
+    LOAD rb1, rw0           # Load single byte into rb1
+    CMP rb1, 0
+    JZ .done
+    OUT 1, rb1              # Output byte to raw_io
+    ADD rw0, 1
+    JMP .loop
+  .done:
+    RET
+
+# Helper function to print a decimal number in rw1 to raw_io
+# Uses rw2-rw5 for temporary storage
+print_num:
+  CMP rw1, 0
+  JNZ .print_num_nonzero
+  MOV rb4, 48             # '0' in ASCII
+  OUT 1, rb4
+  RET
+  
+  .print_num_nonzero:
+  MOV rw2, 1000000000     # Divisor for first digit
+  MOV rw3, 0              # Flag: started printing (skip leading zeros)
+  
+  .digit_loop:
+    CMP rw2, 0
+    JZ .print_num_done
+    
+    MOV rw4, rw1
+    DIV rw4, rw2          # rw4 = digit
+    MOD rw1, rw2          # rw1 = remainder
+    DIV rw2, 10           # rw2 = rw2 / 10
+    
+    # Skip leading zeros unless we've started printing
+    CMP rw4, 0
+    JNZ .print_this_digit
+    CMP rw3, 0
+    JZ .digit_loop
+    
+  .print_this_digit:
+    MOV rw3, 1            # Mark that we've started
+    ADD rw4, 48           # Convert to ASCII ('0' = 48)
+    OUT 1, rb4            # Output digit as character
+    JMP .digit_loop
+    
+  .print_num_done:
+    RET
+
 main:
 
-# Integer arithmetic
-MOV  rw0, 10
-MOV  rw1, 3
-ADD  rw0, rw1      # rw0 = 13
+# Integer arithmetic: ADD
+MOV  rw0, msg_add
+CALL print_str
 
-MOV  rw2, 100
-MOV  rw3, 37
-SUB  rw2, rw3      # rw2 = 63
+MOV  rw2, ADD_A
+MOV  rw3, ADD_B
+ADD  rw2, rw3           # rw2 = 17
+MOV  rw1, rw2
+CALL print_num           # Print result
 
-# Bitwise operations
-MOV  rw4, 0xFF00FF00
-MOV  rw5, 0x0F0F00FF
-AND  rw4, rw5      # rw4 = 0x0F000000
-OR   rw4, rw5
-XOR  rw4, rw5      # rw4 == 0 after XOR with itself
+MOV  rw0, newline
+CALL print_str
 
-MOV  rw6, 0x000000FF
-NOT  rw6
+# SUB
+MOV  rw0, msg_sub
+CALL print_str
 
-# Byte-view arithmetic
-MOV  rb7, 0x05
-MOV  rb8, 0x03
-ADD  rb7, rb8      # rb7 = 0x08
+MOV  rw2, SUB_A
+MOV  rw3, SUB_B
+SUB  rw2, rw3           # rw2 = 63
+MOV  rw1, rw2
+CALL print_num
 
-# CMP sets flags but does not modify registers
-MOV  rw9, 42
-MOV  rw10, 42
-CMP  rw9, rw10     # Z=true (equal), C=false, N=false
+MOV  rw0, newline
+CALL print_str
 
+# MUL (unsigned)
+MOV  rw0, msg_mul
+CALL print_str
+
+MOV  rw2, MUL_A
+MOV  rw3, MUL_B
+MUL  rw2, rw3           # rw2 = 60
+MOV  rw1, rw2
+CALL print_num
+
+MOV  rw0, newline
+CALL print_str
+
+# DIV (unsigned)
+MOV  rw0, msg_div
+CALL print_str
+
+MOV  rw2, DIV_A
+MOV  rw3, DIV_B
+DIV  rw2, rw3           # rw2 = 25
+MOV  rw1, rw2
+CALL print_num
+
+MOV  rw0, newline
+CALL print_str
+
+# MOD (unsigned)
+MOV  rw0, msg_mod
+CALL print_str
+
+MOV  rw2, MOD_A
+MOV  rw3, MOD_B
+MOD  rw2, rw3           # rw2 = 2
+MOV  rw1, rw2
+CALL print_num
+
+MOV  rw0, newline
+CALL print_str
+
+# SMUL (signed): -1 * 7 = -7 (as u32: 0xFFFFFFF9)
+MOV  rw0, msg_smul
+CALL print_str
+
+MOV  rw2, SMUL_NEG      # -1 in 32-bit signed
+MOV  rw3, SMUL_POS      # 7
+SMUL rw2, rw3           # rw2 = 0xFFFFFFF9 (-7)
+MOV  rw1, rw2
+CALL print_num
+
+MOV  rw0, newline
+CALL print_str
+
+# Test overflow flag with signed multiplication
+MOV  rw0, msg_overflow
+CALL print_str
+
+MOV  rw2, OVERFLOW_VAL  # Max positive (2147483647)
+MOV  rw3, OVERFLOW_MUL  # 2
+SMUL rw2, rw3           # Overflow occurs: 2147483647 * 2
+JO   overflow_occurred
+
+# No overflow case (shouldn't reach here in this test)
+MOV  rw1, 0
+CALL print_num
+JMP  end_test
+
+overflow_occurred:
+MOV  rw1, 0xFFFFFFFF    # Print -1 to indicate overflow
+CALL print_num
+
+end_test:
+MOV  rw0, newline
+CALL print_str
 HALT

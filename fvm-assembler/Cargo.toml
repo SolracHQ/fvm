@@ -10,3 +10,5 @@ publish.workspace = true
 clap = { version = "4.5.60", features = ["derive"] }
 thiserror = { workspace = true }
 fvm-core = { path = "../fvm-core" }
+logos = "0.16.1"
+ariadne = "0.6.0"

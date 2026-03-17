@@ -27,8 +27,14 @@ if [[ -z "$rom_path" || "$rom_path" == "null" ]]; then
   exit 1
 fi
 
-example_name="$(basename "$rom_path" .fo)"
-source_path="examples/${example_name}.fa"
+if [[ "$rom_path" == target/examples/*.fo ]]; then
+  example_path="${rom_path#target/examples/}"
+  example_path="${example_path%.fo}"
+else
+  example_path="$(basename "$rom_path" .fo)"
+fi
+
+source_path="examples/${example_path}.fa"
 
 if [[ ! -f "$source_path" ]]; then
   echo "example source not found: $source_path" >&2

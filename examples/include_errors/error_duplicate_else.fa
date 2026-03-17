@@ -1,0 +1,16 @@
+# Error example: duplicate #else in the same conditional block.
+#
+# Run with:
+#   just asm-example include_errors/error_duplicate_else
+#
+# Expected: the preprocessor reports a duplicate #else.
+
+#define FLAG
+#ifdef FLAG
+#else
+#else
+#endif
+
+.code
+main:
+    HALT

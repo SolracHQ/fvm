@@ -23,6 +23,8 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
         | Op::JnzReg
         | Op::JcReg
         | Op::JnReg
+        | Op::JoReg
+        | Op::JnoReg
         | Op::CallReg
         | Op::IntReg => Instruction::new(
             opcode,
@@ -30,7 +32,7 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
             1,
         ),
 
-        Op::Jmp | Op::Jz | Op::Jnz | Op::Jc | Op::Jn | Op::Call => Instruction::new(
+        Op::Jmp | Op::Jz | Op::Jnz | Op::Jc | Op::Jn | Op::Jo | Op::Jno | Op::Call => Instruction::new(
             opcode,
             [read_u32_arg(vm, ip, 1)?, Argument::None, Argument::None],
             1,
@@ -55,6 +57,12 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
         | Op::Or
         | Op::Xor
         | Op::Cmp
+        | Op::Mul
+        | Op::Div
+        | Op::Mod
+        | Op::Smul
+        | Op::Sdiv
+        | Op::Smod
         | Op::Load
         | Op::Store
         | Op::SieRegReg
@@ -71,7 +79,13 @@ pub fn decode_instruction(vm: &mut VM, opcode: Op) -> VmResult<Instruction> {
         | Op::AndImm
         | Op::OrImm
         | Op::XorImm
-        | Op::CmpImm => {
+        | Op::CmpImm
+        | Op::MulImm
+        | Op::DivImm
+        | Op::ModImm
+        | Op::SmulImm
+        | Op::SdivImm
+        | Op::SmodImm => {
             let dst = read_reg_encoding(vm, ip, 1)?;
             let imm = read_width_immediate(vm, ip, 2, dst.width_bytes())?;
             Instruction::new(opcode, [Argument::Register(dst), imm, Argument::None], 2)

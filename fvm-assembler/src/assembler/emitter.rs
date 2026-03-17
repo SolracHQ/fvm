@@ -56,13 +56,6 @@ impl SectionEmitter {
                 }
             }
 
-            Argument::UnresolvedLabel(name, line, col) => {
-                return Err(AssemblerError::emit(
-                    *line,
-                    *col,
-                    format!("Unresolved label: {name}"),
-                ));
-            }
         }
         Ok(())
     }
@@ -94,7 +87,7 @@ fn emit_code_section(
 
 pub fn emit(resolved: ResolvedFile, entry_label: &str) -> Result<FvmFormat> {
     let entry_addr = resolved.labels.get(entry_label).copied().ok_or_else(|| {
-        AssemblerError::emit(0, 0, format!("Entry point label not found: {entry_label}"))
+        AssemblerError::emit(0, 0..0, format!("Entry point label not found: {entry_label}"))
     })?;
 
     let (ro_bytes, ro_relocs) = emit_data_section(&resolved.rodata, Section::RoData)?;

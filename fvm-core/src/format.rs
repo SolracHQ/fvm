@@ -2,6 +2,7 @@ use crate::error::FvmError;
 use crate::section::Section;
 use crate::types::{Byte, Word};
 
+#[derive(Debug, Clone)]
 pub struct FvmFormat {
     pub version: Byte,
     pub entry_point: Word,

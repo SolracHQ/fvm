@@ -1,0 +1,14 @@
+# Shared strings used by the runnable examples.
+#
+# ACTIVE_GREETING is defined by the parent file before this include so the same
+# code can select a different string in debug and release builds.
+
+#ifndef INCLUDE_EXAMPLE_GREETING_FA
+#define INCLUDE_EXAMPLE_GREETING_FA
+
+.rodata
+greeting_debug: db "debug build from include example\n", 0
+greeting_release: db "release build from include example\n", 0
+trace_banner: db "trace byte emitted before message\n", 0
+
+#endif

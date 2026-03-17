@@ -5,6 +5,7 @@ use num_enum::TryFromPrimitive;
 pub enum Interrupt {
     BusFault = 1,
     InvalidOpcode = 2,
+    DivisionByZero = 3,
     PrivilegeViolation = 6,
     Syscall = 15,
     DeviceEndOfInput = 16,

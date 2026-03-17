@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_parse_privileged_memory_ops() {
         let result = assemble_source(
-            "main:\nTUR rw0, rw1\nTKR rw2, rw3\nMMAP rw4, rw5, rw6\nMMAP rw4, rw5, 4096\nMUNMAP rw7, rw8\nMUNMAP rw7, 4096\nMPROTECT rw9, rb0\nHALT",
+            "main:\nTUR rw0, rw1\nTKR rw2, rw3\nMMAP rw4, rw5, rw6\nMMAP rw4, rw5, 4096\nMUNMAP rw7, rw8\nMUNMAP rw7, 4096\nMPROTECT rw9, rw10, rb0\nHALT",
         );
         assert!(
             result.is_ok(),

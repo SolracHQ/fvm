@@ -1,0 +1,50 @@
+# Runnable release-flavoured include/preprocessor example.
+#
+# Assemble with:
+#   just asm-example include_example/release
+#
+# Run with raw output:
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/include_example/release.fo", devices: [raw_io(port: 0)])'
+#
+# What this file demonstrates:
+# - #undef removing TRACE_IO before the shared trace block is included
+# - #define RELEASE_BUILD switching the selected greeting string
+# - the same shared includes producing a different result without touching them
+# - a runnable program that prints the selected included string directly
+
+#include "constants.fa"
+#undef TRACE_IO
+#define RELEASE_BUILD
+#define ACTIVE_GREETING greeting_release
+#include "greeting.fa"
+
+.code
+main:
+    MOV rb0, '?'
+#include "trace_block.fa"
+
+#ifndef RELEASE_BUILD
+    MOV rw1, trace_banner
+    .trace_loop:
+        LOAD rb2, rw1
+        CMP rb2, 0
+        JZ .trace_done
+        OUT 0, rb2
+        ADD rw1, 1
+        JMP .trace_loop
+    .trace_done:
+#endif
+
+    MOV rw1, ACTIVE_GREETING
+    .loop:
+        LOAD rb2, rw1
+        CMP rb2, 0
+        JZ .done
+        OUT 0, rb2
+        ADD rw1, 1
+        JMP .loop
+
+    MOV rw0, PAGE_SIZE
+    MOV rw2, DEFAULT_COUNT
+    .done:
+    HALT

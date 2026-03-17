@@ -32,6 +32,12 @@ pub fn execute_instruction(vm: &mut VM, instruction: Instruction) -> VmResult<()
         Op::Xor | Op::XorImm => arithmetic(vm, &instruction, ArithmeticOp::Xor),
         Op::Not => bitwise_not(vm, &instruction.arguments[0]),
         Op::Cmp | Op::CmpImm => compare(vm, &instruction.arguments[0], &instruction.arguments[1]),
+        Op::Mul | Op::MulImm => arithmetic(vm, &instruction, ArithmeticOp::Mul),
+        Op::Div | Op::DivImm => arithmetic(vm, &instruction, ArithmeticOp::Div),
+        Op::Mod | Op::ModImm => arithmetic(vm, &instruction, ArithmeticOp::Mod),
+        Op::Smul | Op::SmulImm => arithmetic(vm, &instruction, ArithmeticOp::Smul),
+        Op::Sdiv | Op::SdivImm => arithmetic(vm, &instruction, ArithmeticOp::Sdiv),
+        Op::Smod | Op::SmodImm => arithmetic(vm, &instruction, ArithmeticOp::Smod),
         Op::Jmp | Op::JmpReg => jump(vm, &instruction.arguments[0]),
         Op::Jz | Op::JzReg => conditional_jump(
             vm,
@@ -55,6 +61,18 @@ pub fn execute_instruction(vm: &mut VM, instruction: Instruction) -> VmResult<()
             vm,
             &instruction.arguments[0],
             vm.files[vm.active].flags.is_set(Flag::Negative),
+            instruction.size as u32,
+        ),
+        Op::Jo | Op::JoReg => conditional_jump(
+            vm,
+            &instruction.arguments[0],
+            vm.files[vm.active].flags.is_set(Flag::Overflow),
+            instruction.size as u32,
+        ),
+        Op::Jno | Op::JnoReg => conditional_jump(
+            vm,
+            &instruction.arguments[0],
+            !vm.files[vm.active].flags.is_set(Flag::Overflow),
             instruction.size as u32,
         ),
         Op::Call | Op::CallReg => call(vm, &instruction),
@@ -92,6 +110,12 @@ enum ArithmeticOp {
     And,
     Or,
     Xor,
+    Mul,
+    Div,
+    Mod,
+    Smul,
+    Sdiv,
+    Smod,
 }
 
 enum ShiftOp {
@@ -158,16 +182,62 @@ fn arithmetic(vm: &mut VM, instruction: &Instruction, op: ArithmeticOp) -> VmRes
     let rhs = read_source_value(vm, &instruction.arguments[1])? & mask_for_width(dst.width_bytes());
     let width = dst.width_bytes();
 
-    let (result, carry) = match op {
-        ArithmeticOp::Add => add_values(lhs, rhs, width),
-        ArithmeticOp::Sub => sub_values(lhs, rhs, width),
-        ArithmeticOp::And => (lhs & rhs, false),
-        ArithmeticOp::Or => (lhs | rhs, false),
-        ArithmeticOp::Xor => (lhs ^ rhs, false),
+    let (result, carry, overflow) = match op {
+        ArithmeticOp::Add => {
+            let (res, carry) = add_values(lhs, rhs, width);
+            let overflow = check_add_overflow(lhs, rhs, res, width, false);
+            (res, carry, overflow)
+        },
+        ArithmeticOp::Sub => {
+            let (res, carry) = sub_values(lhs, rhs, width);
+            let overflow = check_sub_overflow(lhs, rhs, res, width, false);
+            (res, carry, overflow)
+        },
+        ArithmeticOp::And => (lhs & rhs, false, false),
+        ArithmeticOp::Or => (lhs | rhs, false, false),
+        ArithmeticOp::Xor => (lhs ^ rhs, false, false),
+        ArithmeticOp::Mul => {
+            let (res, carry, overflow) = mul_values(lhs, rhs, width);
+            (res, carry, overflow)
+        },
+        ArithmeticOp::Div => {
+            if rhs == 0 {
+                return Err(VmError::Interrupt(Interrupt::DivisionByZero));
+            }
+            (lhs / rhs, false, false)
+        },
+        ArithmeticOp::Mod => {
+            if rhs == 0 {
+                return Err(VmError::Interrupt(Interrupt::DivisionByZero));
+            }
+            (lhs % rhs, false, false)
+        },
+        ArithmeticOp::Smul => {
+            let (res, carry, overflow) = smul_values(lhs, rhs, width);
+            (res, carry, overflow)
+        },
+        ArithmeticOp::Sdiv => {
+            if rhs == 0 {
+                return Err(VmError::Interrupt(Interrupt::DivisionByZero));
+            }
+            let lhs_signed = sign_extend_to_i32(lhs, width);
+            let rhs_signed = sign_extend_to_i32(rhs, width);
+            let result = lhs_signed / rhs_signed;
+            (result as u32, false, false)
+        },
+        ArithmeticOp::Smod => {
+            if rhs == 0 {
+                return Err(VmError::Interrupt(Interrupt::DivisionByZero));
+            }
+            let lhs_signed = sign_extend_to_i32(lhs, width);
+            let rhs_signed = sign_extend_to_i32(rhs, width);
+            let result = lhs_signed % rhs_signed;
+            (result as u32, false, false)
+        },
     };
 
     write_register(vm, dst, result)?;
-    set_arithmetic_flags(vm, result, width, carry);
+    set_arithmetic_flags_with_overflow(vm, result, width, carry, overflow);
     Ok(())
 }
 
@@ -647,6 +717,16 @@ fn set_arithmetic_flags(vm: &mut VM, result: u32, width: u8, carry: bool) {
     set_or_clear(flags, Flag::Carry, carry);
 }
 
+fn set_arithmetic_flags_with_overflow(vm: &mut VM, result: u32, width: u8, carry: bool, overflow: bool) {
+    let masked = result & mask_for_width(width);
+    let flags = &mut vm.files[vm.active].flags;
+
+    set_or_clear(flags, Flag::Zero, masked == 0);
+    set_or_clear(flags, Flag::Negative, masked & sign_bit(width) != 0);
+    set_or_clear(flags, Flag::Carry, carry);
+    set_or_clear(flags, Flag::Overflow, overflow);
+}
+
 fn set_or_clear(flags: &mut crate::vm::flags::Flags, flag: Flag, value: bool) {
     if value {
         flags.set(flag);
@@ -671,4 +751,63 @@ fn sign_bit(width: u8) -> u32 {
         4 => 0x8000_0000,
         _ => 0,
     }
+}
+
+fn sign_extend_to_i32(value: u32, width: u8) -> i32 {
+    let masked = value & mask_for_width(width);
+    if masked & sign_bit(width) != 0 {
+        (masked as i32) | ((!mask_for_width(width)) as i32)
+    } else {
+        masked as i32
+    }
+}
+
+fn mul_values(lhs: u32, rhs: u32, width: u8) -> (u32, bool, bool) {
+    let mask = mask_for_width(width);
+    let lhs_masked = lhs & mask;
+    let rhs_masked = rhs & mask;
+    
+    let product = lhs_masked as u64 * rhs_masked as u64;
+    let result = (product & mask as u64) as u32;
+    let carry = product > mask as u64;
+    let overflow = carry;
+    
+    (result, carry, overflow)
+}
+
+fn smul_values(lhs: u32, rhs: u32, width: u8) -> (u32, bool, bool) {
+    let lhs_signed = sign_extend_to_i32(lhs, width);
+    let rhs_signed = sign_extend_to_i32(rhs, width);
+    
+    let product = (lhs_signed as i64) * (rhs_signed as i64);
+    
+    let min_val = -(1i64 << (width * 8 - 1));
+    let max_val = (1i64 << (width * 8 - 1)) - 1;
+    
+    let overflow = product < min_val || product > max_val;
+    let result = (product as u32) & mask_for_width(width);
+    
+    (result, overflow, overflow)
+}
+
+fn check_add_overflow(lhs: u32, rhs: u32, _result: u32, width: u8, _signed: bool) -> bool {
+    let lhs_signed = sign_extend_to_i32(lhs, width);
+    let rhs_signed = sign_extend_to_i32(rhs, width);
+    
+    let sum = (lhs_signed as i64) + (rhs_signed as i64);
+    let min_val = -(1i64 << (width * 8 - 1));
+    let max_val = (1i64 << (width * 8 - 1)) - 1;
+    
+    sum < min_val || sum > max_val
+}
+
+fn check_sub_overflow(lhs: u32, rhs: u32, _result: u32, width: u8, _signed: bool) -> bool {
+    let lhs_signed = sign_extend_to_i32(lhs, width);
+    let rhs_signed = sign_extend_to_i32(rhs, width);
+    
+    let diff = (lhs_signed as i64) - (rhs_signed as i64);
+    let min_val = -(1i64 << (width * 8 - 1));
+    let max_val = (1i64 << (width * 8 - 1)) - 1;
+    
+    diff < min_val || diff > max_val
 }

@@ -3,7 +3,7 @@
 # runs a few instructions, then returns to kernel via INT 15.
 #
 # Run with:
-#   just asm-exec ''(mem_size: "16mb", rom: "target/examples/dpl_test.fo", devices: [raw_io(port: 0), hex_io(port: 1)])''
+#   just asm-exec '(mem_size: "16mb", rom: "target/examples/dpl_test.fo", devices: [raw_io(port: 0), hex_io(port: 1)])'
 
 .rodata
   msg_kernel_start: db "kernel: setting up user context\n", 0

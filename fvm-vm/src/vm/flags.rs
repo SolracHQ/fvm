@@ -3,6 +3,7 @@ pub enum Flag {
     Zero,
     Negative,
     Carry,
+    Overflow,
 }
 
 #[derive(Clone, Copy)]
@@ -14,11 +15,11 @@ impl Flags {
     }
 
     pub fn from_bits(bits: u8) -> Self {
-        Flags(bits & 0b111)
+        Flags(bits & 0b1111)
     }
 
     pub fn bits(self) -> u8 {
-        self.0 & 0b111
+        self.0 & 0b1111
     }
 
     pub fn set(&mut self, flag: Flag) {
@@ -26,6 +27,7 @@ impl Flags {
             Flag::Zero => self.0 |= 1 << 0,
             Flag::Negative => self.0 |= 1 << 1,
             Flag::Carry => self.0 |= 1 << 2,
+            Flag::Overflow => self.0 |= 1 << 3,
         }
     }
 
@@ -34,6 +36,7 @@ impl Flags {
             Flag::Zero => self.0 &= !(1 << 0),
             Flag::Negative => self.0 &= !(1 << 1),
             Flag::Carry => self.0 &= !(1 << 2),
+            Flag::Overflow => self.0 &= !(1 << 3),
         }
     }
 
@@ -42,6 +45,7 @@ impl Flags {
             Flag::Zero => (self.0 & (1 << 0)) != 0,
             Flag::Negative => (self.0 & (1 << 1)) != 0,
             Flag::Carry => (self.0 & (1 << 2)) != 0,
+            Flag::Overflow => (self.0 & (1 << 3)) != 0,
         }
     }
 }
@@ -57,6 +61,9 @@ impl std::fmt::Debug for Flags {
         }
         if self.is_set(Flag::Carry) {
             flags.push("C");
+        }
+        if self.is_set(Flag::Overflow) {
+            flags.push("O");
         }
         write!(f, "Flags({})", flags.join(""))
     }
