@@ -29,11 +29,11 @@ test *args:
 clean:
   cargo clean
 
-# Build the mdbook reference and copy to /doc
+# Build the mdbook reference and copy to /docs
 doc:
-  rm -rf doc
+  rm -rf docs
   cd fvm-reference && mdbook build
-  mv fvm-reference/book doc
+  mv fvm-reference/book docs
 
 # Show available commands
 help:
@@ -45,5 +45,5 @@ help:
   @echo "  just run <args>  - Run the Rust VM via cargo run"
   @echo "  just test <args> - Run Rust tests via cargo test"
   @echo "  just clean       - Remove cargo artifacts"
-  @echo "  just doc         - Build mdbook reference and copy to /doc"
+  @echo "  just doc         - Build mdbook reference and copy to /docs"
   @echo "  just help        - Show this message"
